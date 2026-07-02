@@ -917,6 +917,92 @@ h3 {
   gap: 8px;
 }
 
+.host-action-list,
+.action-management,
+.action-management-list {
+  display: grid;
+  gap: 8px;
+}
+
+.host-action-row {
+  display: grid;
+  grid-template-columns: 48px 64px minmax(0, 1fr) minmax(78px, auto);
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+  font-size: 12px;
+}
+
+.host-action-row span,
+.host-action-row small,
+.host-action-row b,
+.host-action-row em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-action-row small {
+  color: #6f6a62;
+}
+
+.host-action-row b {
+  font-weight: 500;
+}
+
+.host-action-row em {
+  color: #166534;
+  font-style: normal;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.75fr) minmax(70px, 0.5fr) minmax(96px, 0.8fr) minmax(108px, 0.8fr) minmax(86px, 0.6fr) minmax(86px, 0.65fr) minmax(82px, 0.55fr) minmax(150px, 1.1fr) auto;
+  align-items: end;
+  gap: 6px;
+  min-width: 940px;
+  padding: 8px;
+  border: 1px solid #e4ded3;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fbfaf7;
+}
+
+.action-management-list {
+  overflow-x: auto;
+}
+
+.action-todo {
+  border-left-color: #f59e0b;
+}
+
+.action-done {
+  border-left-color: #10b981;
+}
+
+.action-missed {
+  border-left-color: #ef4444;
+}
+
+.action-detail-modal {
+  width: min(520px, 100%);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .bottle-row {
   display: grid;
   grid-template-columns: minmax(92px, 0.8fr) minmax(110px, 0.8fr) minmax(120px, 1fr) minmax(76px, 0.55fr) minmax(96px, 0.75fr) minmax(96px, 0.75fr) minmax(82px, 0.55fr) minmax(150px, 1.2fr) auto;
@@ -2161,10 +2247,17 @@ button:disabled {
 .management-rules-panel,
 .management-expense-guide-panel,
 .management-customer-panel,
+.management-action-panel,
 .management-bottle-panel,
 .management-log-panel,
 .management-account-panel {
   min-width: 0;
+}
+
+.management-customer-panel,
+.management-action-panel,
+.management-bottle-panel {
+  grid-column: 1 / -1;
 }
 
 .collapsible-panel {

@@ -136,6 +136,21 @@ type BottleKeep = {
   status: "active" | "low" | "empty";
 };
 
+type CustomerActionKind = "visit" | "nomination" | "dohan" | "after" | "follow";
+type CustomerActionStatus = "todo" | "done" | "missed";
+
+type CustomerAction = {
+  id: number;
+  customer: string;
+  hostId: number;
+  date: string;
+  time: string;
+  kind: CustomerActionKind;
+  targetAmount: number;
+  status: CustomerActionStatus;
+  memo: string;
+};
+
 type OpenTable = {
   id: number;
   table: string;
@@ -234,6 +249,34 @@ const expenseTaxRateOptions: Array<{ label: string; value: string }> = [
   { label: "対象外", value: "0" }
 ];
 const expenseTaxRateLabel = (rate?: number) => (rate === 8 ? "8%" : rate === 0 ? "対象外" : "10%");
+
+const customerActionKindOptions: Array<{ label: string; value: CustomerActionKind }> = [
+  { label: "来店", value: "visit" },
+  { label: "指名", value: "nomination" },
+  { label: "同伴", value: "dohan" },
+  { label: "アフター", value: "after" },
+  { label: "連絡", value: "follow" }
+];
+
+const customerActionKindLabel: Record<CustomerActionKind, string> = {
+  visit: "来店",
+  nomination: "指名",
+  dohan: "同伴",
+  after: "アフター",
+  follow: "連絡"
+};
+
+const customerActionStatusOptions: Array<{ label: string; value: CustomerActionStatus }> = [
+  { label: "予定", value: "todo" },
+  { label: "完了", value: "done" },
+  { label: "未対応", value: "missed" }
+];
+
+const customerActionStatusLabel: Record<CustomerActionStatus, string> = {
+  todo: "予定",
+  done: "完了",
+  missed: "未対応"
+};
 
 const hostExpenseAccountGuide = [
   {
@@ -485,6 +528,42 @@ const initialBottles: BottleKeep[] = [
     expiresAt: "2026-07-18",
     memo: "空。次回来店時に新規確認",
     status: "empty"
+  }
+];
+
+const initialCustomerActions: CustomerAction[] = [
+  {
+    id: 1,
+    customer: "A様",
+    hostId: 1,
+    date: "2026-07-02",
+    time: "21:30",
+    kind: "dohan",
+    targetAmount: 300000,
+    status: "todo",
+    memo: "同伴後にVIP確認。ボトル残量も見る"
+  },
+  {
+    id: 2,
+    customer: "M様",
+    hostId: 3,
+    date: "2026-07-02",
+    time: "23:00",
+    kind: "visit",
+    targetAmount: 500000,
+    status: "todo",
+    memo: "イベント相談。会計前に予算確認"
+  },
+  {
+    id: 3,
+    customer: "R様",
+    hostId: 2,
+    date: "2026-07-03",
+    time: "20:30",
+    kind: "follow",
+    targetAmount: 0,
+    status: "todo",
+    memo: "入金確認後に来店打診"
   }
 ];
 
@@ -832,6 +911,7 @@ function App() {
   const [tableChecks, setTableChecks] = React.useState<TableCheck[]>(initialTableChecks);
   const [customerProfiles, setCustomerProfiles] = React.useState<CustomerProfile[]>(initialCustomerProfiles);
   const [bottles, setBottles] = React.useState<BottleKeep[]>(initialBottles);
+  const [customerActions, setCustomerActions] = React.useState<CustomerAction[]>(initialCustomerActions);
   const [openTables, setOpenTables] = React.useState<OpenTable[]>(initialOpenTables);
   const [expenses, setExpenses] = React.useState<Expense[]>(initialExpenses);
   const [registerCloses, setRegisterCloses] = React.useState<RegisterClose[]>([]);
@@ -1338,6 +1418,57 @@ function App() {
     }
   };
 
+  const addCustomerAction = () => {
+    const nextAction: CustomerAction = {
+      id: Date.now(),
+      customer: "新規顧客",
+      hostId: selectedHostId,
+      date: currentBusinessDate,
+      time: currentTime(),
+      kind: "visit",
+      targetAmount: 0,
+      status: "todo",
+      memo: ""
+    };
+    setCustomerActions((current) => [nextAction, ...current]);
+    addOperationLog({
+      scope: "予定",
+      action: "登録",
+      target: `${nextAction.customer} / ${customerActionKindLabel[nextAction.kind]}`,
+      detail: `${hostName(nextAction.hostId)} / ${nextAction.date} ${nextAction.time}`
+    });
+  };
+
+  const updateCustomerAction = (id: number, patch: Partial<CustomerAction>) => {
+    setCustomerActions((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const completeCustomerAction = (id: number) => {
+    const targetAction = customerActions.find((item) => item.id === id);
+    setCustomerActions((current) => current.map((item) => (item.id === id ? { ...item, status: "done" } : item)));
+    if (targetAction) {
+      addOperationLog({
+        scope: "予定",
+        action: "完了",
+        target: `${targetAction.customer} / ${customerActionKindLabel[targetAction.kind]}`,
+        detail: `${hostName(targetAction.hostId)} / ${targetAction.date} ${targetAction.time}`
+      });
+    }
+  };
+
+  const deleteCustomerAction = (id: number) => {
+    const targetAction = customerActions.find((item) => item.id === id);
+    setCustomerActions((current) => current.filter((item) => item.id !== id));
+    if (targetAction) {
+      addOperationLog({
+        scope: "予定",
+        action: "削除",
+        target: `${targetAction.customer} / ${customerActionKindLabel[targetAction.kind]}`,
+        detail: `${hostName(targetAction.hostId)} / ${targetAction.date} ${targetAction.time}`
+      });
+    }
+  };
+
   const saveRegisterClose = (actualCash: number, expectedCash: number, startCash: number, cashInjection: number, memo: string) => {
     if (!currentUser || !canOperate) return;
     const difference = actualCash - expectedCash;
@@ -1495,8 +1626,11 @@ function App() {
             host={selectedHost}
             todaySales={hostTodaySales}
             openTables={openTables.filter((table) => table.hostId === selectedHost.id)}
+            customerActions={customerActions}
+            currentBusinessDate={currentBusinessDate}
             onAddOpenTable={() => addOpenTable(selectedHost.id)}
             onUpdateOpenTable={updateOpenTable}
+            onCompleteAction={completeCustomerAction}
           />
         ) : (
           <StoreHome
@@ -1731,11 +1865,15 @@ function App() {
               tableChecks={tableChecks}
               customerProfiles={customerProfiles}
               bottles={bottles}
+              customerActions={customerActions}
               hostName={hostName}
               onUpdateCustomerProfile={updateCustomerProfile}
               onAddBottle={addBottle}
               onUpdateBottle={updateBottle}
               onDeleteBottle={deleteBottle}
+              onAddCustomerAction={addCustomerAction}
+              onUpdateCustomerAction={updateCustomerAction}
+              onDeleteCustomerAction={deleteCustomerAction}
               onInstall={handleInstall}
               onLogout={handleLogout}
               onUpdateSettings={setStoreSettings}
@@ -1758,11 +1896,15 @@ function App() {
             tableChecks={tableChecks}
             customerProfiles={customerProfiles}
             bottles={bottles}
+            customerActions={customerActions}
             hostName={hostName}
             onUpdateCustomerProfile={updateCustomerProfile}
             onAddBottle={addBottle}
             onUpdateBottle={updateBottle}
             onDeleteBottle={deleteBottle}
+            onAddCustomerAction={addCustomerAction}
+            onUpdateCustomerAction={updateCustomerAction}
+            onDeleteCustomerAction={deleteCustomerAction}
             onInstall={handleInstall}
             onLogout={handleLogout}
             onUpdateSettings={setStoreSettings}
@@ -1941,16 +2083,26 @@ function HostHome({
   host,
   todaySales,
   openTables,
+  customerActions,
+  currentBusinessDate,
   onAddOpenTable,
-  onUpdateOpenTable
+  onUpdateOpenTable,
+  onCompleteAction
 }: {
   host: Host;
   todaySales: number;
   openTables: OpenTable[];
+  customerActions: CustomerAction[];
+  currentBusinessDate: string;
   onAddOpenTable: () => void;
   onUpdateOpenTable: (id: number, patch: Partial<OpenTable>) => void;
+  onCompleteAction: (id: number) => void;
 }) {
   const openTotal = openTables.reduce((sum, table) => sum + table.currentAmount, 0);
+  const [selectedAction, setSelectedAction] = React.useState<CustomerAction | null>(null);
+  const todayActions = customerActions
+    .filter((action) => action.hostId === host.id && action.date === currentBusinessDate && action.status !== "done")
+    .sort((a, b) => a.time.localeCompare(b.time));
 
   return (
     <section className="home-stack">
@@ -1967,6 +2119,28 @@ function HostHome({
         </div>
       </article>
 
+      {todayActions.length > 0 && (
+        <article className="panel wide">
+          <div className="panel-header compact-header">
+            <div>
+              <p className="eyebrow">予定</p>
+              <h3>今日の対応</h3>
+            </div>
+            <span className="status-pill status-ok">{todayActions.length}件</span>
+          </div>
+          <div className="host-action-list">
+            {todayActions.map((action) => (
+              <button className="host-action-row selectable-row" type="button" key={action.id} onClick={() => setSelectedAction(action)}>
+                <span>{action.time}</span>
+                <small>{customerActionKindLabel[action.kind]}</small>
+                <b>{action.customer}</b>
+                <em>{action.targetAmount > 0 ? money(action.targetAmount) : "目標なし"}</em>
+              </button>
+            ))}
+          </div>
+        </article>
+      )}
+
       <article className="panel wide">
         <OpenTablesPanel
           title="未会計の卓"
@@ -1982,7 +2156,65 @@ function HostHome({
           onUpdate={onUpdateOpenTable}
         />
       </article>
+
+      {selectedAction && (
+        <CustomerActionDetailModal
+          action={selectedAction}
+          hostName={() => host.name}
+          onComplete={() => {
+            onCompleteAction(selectedAction.id);
+            setSelectedAction(null);
+          }}
+          onClose={() => setSelectedAction(null)}
+        />
+      )}
     </section>
+  );
+}
+
+function CustomerActionDetailModal({
+  action,
+  hostName,
+  onComplete,
+  onClose
+}: {
+  action: CustomerAction;
+  hostName: (hostId?: number) => string;
+  onComplete?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="予定詳細">
+      <article className="panel checkout-modal action-detail-modal">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">{customerActionKindLabel[action.kind]}</p>
+            <h3>{action.customer}</h3>
+          </div>
+          <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+        <div className="result-lines">
+          <div><span>担当</span><b>{hostName(action.hostId)}</b></div>
+          <div><span>日時</span><b>{action.date} {action.time}</b></div>
+          <div><span>目標</span><b>{action.targetAmount > 0 ? yenMoney(action.targetAmount) : "なし"}</b></div>
+          <div><span>状態</span><b>{customerActionStatusLabel[action.status]}</b></div>
+        </div>
+        {action.memo && <p className="tax-note">{action.memo}</p>}
+        <div className="modal-actions">
+          {onComplete && action.status !== "done" && (
+            <button className="install-button" type="button" onClick={onComplete}>
+              <CheckCircle2 size={16} />
+              完了
+            </button>
+          )}
+          <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -4765,11 +4997,15 @@ function ManagementView({
   tableChecks,
   customerProfiles,
   bottles,
+  customerActions,
   hostName,
   onUpdateCustomerProfile,
   onAddBottle,
   onUpdateBottle,
   onDeleteBottle,
+  onAddCustomerAction,
+  onUpdateCustomerAction,
+  onDeleteCustomerAction,
   onInstall,
   onLogout,
   onUpdateSettings,
@@ -4789,11 +5025,15 @@ function ManagementView({
   tableChecks: TableCheck[];
   customerProfiles: CustomerProfile[];
   bottles: BottleKeep[];
+  customerActions: CustomerAction[];
   hostName: (hostId?: number) => string;
   onUpdateCustomerProfile: (id: number, patch: Partial<CustomerProfile>) => void;
   onAddBottle: () => void;
   onUpdateBottle: (id: number, patch: Partial<BottleKeep>) => void;
   onDeleteBottle: (id: number) => void;
+  onAddCustomerAction: () => void;
+  onUpdateCustomerAction: (id: number, patch: Partial<CustomerAction>) => void;
+  onDeleteCustomerAction: (id: number) => void;
   onInstall: () => void;
   onLogout: () => void;
   onUpdateSettings: (settings: StoreSettings) => void;
@@ -4839,6 +5079,16 @@ function ManagementView({
             onAddBottle={onAddBottle}
             onUpdateBottle={onUpdateBottle}
             onDeleteBottle={onDeleteBottle}
+          />
+        </CollapsiblePanel>
+        <CollapsiblePanel eyebrow="接客" title="予定・指名管理" icon={CheckCircle2} className="management-action-panel">
+          <CustomerActionManagementPanel
+            hosts={hosts}
+            actions={customerActions}
+            hostName={hostName}
+            onAddAction={onAddCustomerAction}
+            onUpdateAction={onUpdateCustomerAction}
+            onDeleteAction={onDeleteCustomerAction}
           />
         </CollapsiblePanel>
         </>
@@ -5104,6 +5354,95 @@ function CustomerManagementPanel({
           onClose={() => setSelectedKey(null)}
         />
       )}
+    </div>
+  );
+}
+
+function CustomerActionManagementPanel({
+  hosts,
+  actions,
+  hostName,
+  onAddAction,
+  onUpdateAction,
+  onDeleteAction
+}: {
+  hosts: Host[];
+  actions: CustomerAction[];
+  hostName: (hostId?: number) => string;
+  onAddAction: () => void;
+  onUpdateAction: (id: number, patch: Partial<CustomerAction>) => void;
+  onDeleteAction: (id: number) => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleActions = actions
+    .filter((action) => {
+      if (!normalizedSearch) return true;
+      const searchableText = `${action.customer} ${hostName(action.hostId)} ${customerActionKindLabel[action.kind]} ${customerActionStatusLabel[action.status]} ${action.memo} ${action.date}`.toLowerCase();
+      return searchableText.includes(normalizedSearch);
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
+  return (
+    <div className="action-management">
+      <div className="customer-management-toolbar">
+        <label className="search-shell customer-management-search">
+          <span>検索</span>
+          <input
+            type="search"
+            value={search}
+            placeholder="客名・担当・種別"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <button className="icon-text-button" type="button" onClick={onAddAction}>
+          <Plus size={16} />
+          追加
+        </button>
+      </div>
+
+      <div className="action-management-list">
+        {visibleActions.length === 0 ? (
+          <div className="plain-note">
+            <CheckCircle2 size={18} />
+            <div>
+              <strong>予定なし</strong>
+              <p>接客予定や連絡予定を追加するとここに表示されます。</p>
+            </div>
+          </div>
+        ) : (
+          visibleActions.map((action) => (
+            <div className={`action-row action-${action.status}`} key={action.id}>
+              <TextField label="日付" value={action.date} onChange={(date) => onUpdateAction(action.id, { date })} />
+              <TextField label="時間" value={action.time} onChange={(time) => onUpdateAction(action.id, { time })} />
+              <TextField label="客名" value={action.customer} onChange={(customer) => onUpdateAction(action.id, { customer })} />
+              <SelectField
+                label="担当"
+                value={String(action.hostId)}
+                options={hosts.map((host) => ({ label: host.name, value: String(host.id) }))}
+                onChange={(hostId) => onUpdateAction(action.id, { hostId: Number(hostId) })}
+              />
+              <SelectField
+                label="種別"
+                value={action.kind}
+                options={customerActionKindOptions}
+                onChange={(kind) => onUpdateAction(action.id, { kind: kind as CustomerActionKind })}
+              />
+              <NumberField label="目標" value={action.targetAmount} min={0} step={1000} onChange={(targetAmount) => onUpdateAction(action.id, { targetAmount })} />
+              <SelectField
+                label="状態"
+                value={action.status}
+                options={customerActionStatusOptions}
+                onChange={(status) => onUpdateAction(action.id, { status: status as CustomerActionStatus })}
+              />
+              <TextField label="メモ" value={action.memo} onChange={(memo) => onUpdateAction(action.id, { memo })} />
+              <button className="icon-button danger-button" type="button" aria-label="予定削除" onClick={() => onDeleteAction(action.id)}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
