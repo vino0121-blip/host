@@ -815,6 +815,137 @@ h3 {
   min-width: min(260px, 100%);
 }
 
+.customer-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.customer-card-box {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+}
+
+.customer-card-lines {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: #4b463f;
+}
+
+.customer-card-lines p,
+.customer-card-lines small {
+  margin: 0;
+  color: #6f6a62;
+  line-height: 1.35;
+}
+
+.customer-bottle-mini-list {
+  display: grid;
+  gap: 5px;
+}
+
+.customer-bottle-mini {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  font-size: 11px;
+}
+
+.customer-bottle-mini span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-bottle-mini b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.customer-bottle-mini small {
+  color: #6f6a62;
+}
+
+.customer-profile-editor-list,
+.bottle-management-list {
+  display: grid;
+  gap: 8px;
+}
+
+.customer-profile-editor-list {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e4ded3;
+}
+
+.customer-profile-editor-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) repeat(5, minmax(120px, 1fr));
+  align-items: end;
+  gap: 6px;
+  min-width: 780px;
+  padding: 8px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+}
+
+.customer-profile-editor-list {
+  overflow-x: auto;
+}
+
+.customer-profile-title {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.customer-profile-title small {
+  color: #6f6a62;
+}
+
+.bottle-management {
+  display: grid;
+  gap: 8px;
+}
+
+.bottle-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(110px, 0.8fr) minmax(120px, 1fr) minmax(76px, 0.55fr) minmax(96px, 0.75fr) minmax(96px, 0.75fr) minmax(82px, 0.55fr) minmax(150px, 1.2fr) auto;
+  align-items: end;
+  gap: 6px;
+  min-width: 980px;
+  padding: 8px;
+  border: 1px solid #e4ded3;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fbfaf7;
+}
+
+.bottle-management-list {
+  overflow-x: auto;
+}
+
+.bottle-active {
+  border-left-color: #10b981;
+}
+
+.bottle-low {
+  border-left-color: #f59e0b;
+}
+
+.bottle-empty {
+  border-left-color: #ef4444;
+}
+
 .panel-total {
   font-variant-numeric: tabular-nums;
   font-size: 14px;
@@ -2030,6 +2161,7 @@ button:disabled {
 .management-rules-panel,
 .management-expense-guide-panel,
 .management-customer-panel,
+.management-bottle-panel,
 .management-log-panel,
 .management-account-panel {
   min-width: 0;
@@ -2660,6 +2792,11 @@ button:disabled {
 
   .quick-numbers,
   .detail-metrics {
+    gap: 6px;
+  }
+
+  .customer-card-grid {
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 

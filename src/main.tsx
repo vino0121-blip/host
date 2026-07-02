@@ -113,6 +113,29 @@ type TableCheck = {
   time: string;
 };
 
+type CustomerProfile = {
+  id: number;
+  customer: string;
+  hostId: number;
+  birthday: string;
+  favoriteDrink: string;
+  visitNote: string;
+  caution: string;
+  lastContact: string;
+};
+
+type BottleKeep = {
+  id: number;
+  customer: string;
+  hostId: number;
+  bottleName: string;
+  remaining: number;
+  openedDate: string;
+  expiresAt: string;
+  memo: string;
+  status: "active" | "low" | "empty";
+};
+
 type OpenTable = {
   id: number;
   table: string;
@@ -393,6 +416,75 @@ const initialTableChecks: TableCheck[] = [
     status: "paid",
     date: "2026-06-29",
     time: "01:05"
+  }
+];
+
+const initialCustomerProfiles: CustomerProfile[] = [
+  {
+    id: 1,
+    customer: "A様",
+    hostId: 1,
+    birthday: "8/12",
+    favoriteDrink: "シャンパン・甘め",
+    visitNote: "月末に来店多め。早い時間は短時間になりやすい。",
+    caution: "同席者の前で売掛の話はしない",
+    lastContact: "2026-06-30 LINE返信あり"
+  },
+  {
+    id: 2,
+    customer: "M様",
+    hostId: 3,
+    birthday: "11/03",
+    favoriteDrink: "赤ワイン",
+    visitNote: "VIP利用。イベント前に予算確認。",
+    caution: "会計前に合計確認を必ず挟む",
+    lastContact: "2026-06-29 次回来店相談"
+  },
+  {
+    id: 3,
+    customer: "R様",
+    hostId: 2,
+    birthday: "4/21",
+    favoriteDrink: "焼酎",
+    visitNote: "一人来店が多い。静かな席を希望。",
+    caution: "電話連絡は夜のみ",
+    lastContact: "2026-07-01 入金予定確認"
+  }
+];
+
+const initialBottles: BottleKeep[] = [
+  {
+    id: 1,
+    customer: "A様",
+    hostId: 1,
+    bottleName: "ソウメイ ブリュット",
+    remaining: 65,
+    openedDate: "2026-06-12",
+    expiresAt: "2026-09-12",
+    memo: "次回来店時に優先確認",
+    status: "active"
+  },
+  {
+    id: 2,
+    customer: "M様",
+    hostId: 3,
+    bottleName: "ベルエポック",
+    remaining: 20,
+    openedDate: "2026-05-28",
+    expiresAt: "2026-08-28",
+    memo: "残量少なめ。追加提案候補",
+    status: "low"
+  },
+  {
+    id: 3,
+    customer: "R様",
+    hostId: 2,
+    bottleName: "吉四六",
+    remaining: 0,
+    openedDate: "2026-04-18",
+    expiresAt: "2026-07-18",
+    memo: "空。次回来店時に新規確認",
+    status: "empty"
   }
 ];
 
@@ -738,6 +830,8 @@ function App() {
   const [receivables, setReceivables] = React.useState<Receivable[]>(initialReceivables);
   const [receivablePayments, setReceivablePayments] = React.useState<ReceivablePayment[]>([]);
   const [tableChecks, setTableChecks] = React.useState<TableCheck[]>(initialTableChecks);
+  const [customerProfiles, setCustomerProfiles] = React.useState<CustomerProfile[]>(initialCustomerProfiles);
+  const [bottles, setBottles] = React.useState<BottleKeep[]>(initialBottles);
   const [openTables, setOpenTables] = React.useState<OpenTable[]>(initialOpenTables);
   const [expenses, setExpenses] = React.useState<Expense[]>(initialExpenses);
   const [registerCloses, setRegisterCloses] = React.useState<RegisterClose[]>([]);
@@ -1175,6 +1269,75 @@ function App() {
     }
   };
 
+  const updateCustomerProfile = (id: number, patch: Partial<CustomerProfile>) => {
+    setCustomerProfiles((current) => current.map((profile) => (profile.id === id ? { ...profile, ...patch } : profile)));
+  };
+
+  const upsertCustomerProfile = (customer: string, hostId: number) => {
+    const existingProfile = customerProfiles.find((profile) => profile.customer === customer && profile.hostId === hostId);
+    if (existingProfile) return existingProfile.id;
+    const nextProfile: CustomerProfile = {
+      id: Date.now(),
+      customer,
+      hostId,
+      birthday: "",
+      favoriteDrink: "",
+      visitNote: "",
+      caution: "",
+      lastContact: currentBusinessDate
+    };
+    setCustomerProfiles((current) => [nextProfile, ...current]);
+    return nextProfile.id;
+  };
+
+  const addBottle = () => {
+    const hostId = selectedHostId;
+    const customer = "新規顧客";
+    upsertCustomerProfile(customer, hostId);
+    const nextBottle: BottleKeep = {
+      id: Date.now(),
+      customer,
+      hostId,
+      bottleName: "ボトル名未入力",
+      remaining: 100,
+      openedDate: currentBusinessDate,
+      expiresAt: currentBusinessDate,
+      memo: "",
+      status: "active"
+    };
+    setBottles((current) => [nextBottle, ...current]);
+    addOperationLog({
+      scope: "ボトル",
+      action: "登録",
+      target: `${nextBottle.customer} / ${nextBottle.bottleName}`,
+      detail: hostName(nextBottle.hostId)
+    });
+  };
+
+  const updateBottle = (id: number, patch: Partial<BottleKeep>) => {
+    setBottles((current) =>
+      current.map((bottle) => {
+        if (bottle.id !== id) return bottle;
+        const nextRemaining = typeof patch.remaining === "number" ? Math.max(0, Math.min(100, patch.remaining)) : bottle.remaining;
+        const nextStatus = patch.status ?? (nextRemaining <= 0 ? "empty" : nextRemaining <= 25 ? "low" : "active");
+        return { ...bottle, ...patch, remaining: nextRemaining, status: nextStatus };
+      })
+    );
+  };
+
+  const deleteBottle = (id: number) => {
+    const targetBottle = bottles.find((bottle) => bottle.id === id);
+    setBottles((current) => current.filter((bottle) => bottle.id !== id));
+    if (targetBottle) {
+      addOperationLog({
+        scope: "ボトル",
+        action: "削除",
+        target: `${targetBottle.customer} / ${targetBottle.bottleName}`,
+        detail: hostName(targetBottle.hostId)
+      });
+    }
+  };
+
   const saveRegisterClose = (actualCash: number, expectedCash: number, startCash: number, cashInjection: number, memo: string) => {
     if (!currentUser || !canOperate) return;
     const difference = actualCash - expectedCash;
@@ -1386,7 +1549,15 @@ function App() {
       )}
 
       {activeTab === "personal" && currentUser.role === "host" && (
-        <PersonalView host={selectedHost} monthExpenses={hostMonthExpenses} receivables={visibleReceivables} receivablesEnabled={receivablesEnabled} tableChecks={tableChecks} />
+        <PersonalView
+          host={selectedHost}
+          monthExpenses={hostMonthExpenses}
+          receivables={visibleReceivables}
+          receivablesEnabled={receivablesEnabled}
+          tableChecks={tableChecks}
+          customerProfiles={customerProfiles}
+          bottles={bottles}
+        />
       )}
 
       {activeTab === "daily" && currentUser.role === "host" && (
@@ -1558,7 +1729,13 @@ function App() {
               operationLogs={operationLogs}
               hosts={displayHosts}
               tableChecks={tableChecks}
+              customerProfiles={customerProfiles}
+              bottles={bottles}
               hostName={hostName}
+              onUpdateCustomerProfile={updateCustomerProfile}
+              onAddBottle={addBottle}
+              onUpdateBottle={updateBottle}
+              onDeleteBottle={deleteBottle}
               onInstall={handleInstall}
               onLogout={handleLogout}
               onUpdateSettings={setStoreSettings}
@@ -1579,7 +1756,13 @@ function App() {
             operationLogs={operationLogs}
             hosts={displayHosts}
             tableChecks={tableChecks}
+            customerProfiles={customerProfiles}
+            bottles={bottles}
             hostName={hostName}
+            onUpdateCustomerProfile={updateCustomerProfile}
+            onAddBottle={addBottle}
+            onUpdateBottle={updateBottle}
+            onDeleteBottle={deleteBottle}
             onInstall={handleInstall}
             onLogout={handleLogout}
             onUpdateSettings={setStoreSettings}
@@ -2476,13 +2659,17 @@ function PersonalView({
   monthExpenses,
   receivables,
   receivablesEnabled,
-  tableChecks
+  tableChecks,
+  customerProfiles,
+  bottles
 }: {
   host: Host;
   monthExpenses: number;
   receivables: Receivable[];
   receivablesEnabled: boolean;
   tableChecks: TableCheck[];
+  customerProfiles: CustomerProfile[];
+  bottles: BottleKeep[];
 }) {
   const monthOptions = React.useMemo(() => {
     const base = new Date(2026, 5, 1);
@@ -2526,6 +2713,12 @@ function PersonalView({
     ? hostChecks.filter((check) => check.customerName === selectedCustomer).sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
     : [];
   const selectedCustomerTotal = selectedCustomerChecks.reduce((sum, check) => sum + tableTotal(check), 0);
+  const selectedCustomerProfile = selectedCustomer
+    ? customerProfiles.find((profile) => profile.customer === selectedCustomer && profile.hostId === host.id)
+    : undefined;
+  const selectedCustomerBottles = selectedCustomer
+    ? bottles.filter((bottle) => bottle.customer === selectedCustomer && bottle.hostId === host.id)
+    : [];
 
   return (
     <section className="content-grid">
@@ -2597,6 +2790,8 @@ function PersonalView({
           total={selectedCustomerTotal}
           hostName={() => host.name}
           receivablesEnabled={receivablesEnabled}
+          profile={selectedCustomerProfile}
+          bottles={selectedCustomerBottles}
           onClose={() => setSelectedCustomer(null)}
         />
       )}
@@ -2610,6 +2805,8 @@ function CustomerDetailModal({
   total,
   hostName,
   receivablesEnabled,
+  profile,
+  bottles = [],
   onClose
 }: {
   title: string;
@@ -2617,6 +2814,8 @@ function CustomerDetailModal({
   total: number;
   hostName: (hostId?: number) => string;
   receivablesEnabled: boolean;
+  profile?: CustomerProfile;
+  bottles?: BottleKeep[];
   onClose: () => void;
 }) {
   const average = checks.length > 0 ? Math.round(total / checks.length) : 0;
@@ -2638,6 +2837,36 @@ function CustomerDetailModal({
           <Metric label="来店回数" value={`${checks.length}件`} icon={ReceiptText} tone="green" />
           <Metric label="平均単価" value={yenMoney(average)} icon={Coins} tone="orange" />
         </div>
+        {(profile || bottles.length > 0) && (
+          <div className="customer-card-grid">
+            {profile && (
+              <section className="customer-card-box">
+                <p className="eyebrow">カルテ</p>
+                <div className="customer-card-lines">
+                  <span>誕生日 {profile.birthday || "未設定"}</span>
+                  <span>好み {profile.favoriteDrink || "未設定"}</span>
+                  <span>連絡 {profile.lastContact || "未設定"}</span>
+                  <p>{profile.visitNote || "来店メモなし"}</p>
+                  {profile.caution && <small>{profile.caution}</small>}
+                </div>
+              </section>
+            )}
+            {bottles.length > 0 && (
+              <section className="customer-card-box">
+                <p className="eyebrow">ボトル</p>
+                <div className="customer-bottle-mini-list">
+                  {bottles.map((bottle) => (
+                    <div className="customer-bottle-mini" key={bottle.id}>
+                      <span>{bottle.bottleName}</span>
+                      <b>{bottle.remaining}%</b>
+                      <small>{bottle.expiresAt}</small>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
         <div className="customer-history-list">
           <div className="customer-history-row customer-history-head">
             <span>日付</span>
@@ -4534,7 +4763,13 @@ function ManagementView({
   operationLogs,
   hosts,
   tableChecks,
+  customerProfiles,
+  bottles,
   hostName,
+  onUpdateCustomerProfile,
+  onAddBottle,
+  onUpdateBottle,
+  onDeleteBottle,
   onInstall,
   onLogout,
   onUpdateSettings,
@@ -4552,7 +4787,13 @@ function ManagementView({
   operationLogs: OperationLog[];
   hosts: Host[];
   tableChecks: TableCheck[];
+  customerProfiles: CustomerProfile[];
+  bottles: BottleKeep[];
   hostName: (hostId?: number) => string;
+  onUpdateCustomerProfile: (id: number, patch: Partial<CustomerProfile>) => void;
+  onAddBottle: () => void;
+  onUpdateBottle: (id: number, patch: Partial<BottleKeep>) => void;
+  onDeleteBottle: (id: number) => void;
   onInstall: () => void;
   onLogout: () => void;
   onUpdateSettings: (settings: StoreSettings) => void;
@@ -4583,8 +4824,21 @@ function ManagementView({
           <CustomerManagementPanel
             hosts={hosts}
             tableChecks={tableChecks}
+            customerProfiles={customerProfiles}
+            bottles={bottles}
             hostName={hostName}
             receivablesEnabled={settings.receivablesEnabled}
+            onUpdateCustomerProfile={onUpdateCustomerProfile}
+          />
+        </CollapsiblePanel>
+        <CollapsiblePanel eyebrow="ボトル" title="ボトル管理" icon={ClipboardList} className="management-bottle-panel">
+          <BottleManagementPanel
+            hosts={hosts}
+            bottles={bottles}
+            hostName={hostName}
+            onAddBottle={onAddBottle}
+            onUpdateBottle={onUpdateBottle}
+            onDeleteBottle={onDeleteBottle}
           />
         </CollapsiblePanel>
         </>
@@ -4716,13 +4970,19 @@ function ManagementView({
 function CustomerManagementPanel({
   hosts,
   tableChecks,
+  customerProfiles,
+  bottles,
   hostName,
-  receivablesEnabled
+  receivablesEnabled,
+  onUpdateCustomerProfile
 }: {
   hosts: Host[];
   tableChecks: TableCheck[];
+  customerProfiles: CustomerProfile[];
+  bottles: BottleKeep[];
   hostName: (hostId?: number) => string;
   receivablesEnabled: boolean;
+  onUpdateCustomerProfile: (id: number, patch: Partial<CustomerProfile>) => void;
 }) {
   const [search, setSearch] = React.useState("");
   const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
@@ -4763,6 +5023,12 @@ function CustomerManagementPanel({
     return searchableText.includes(normalizedSearch);
   });
   const selectedCustomer = selectedKey ? customers.find((item) => item.key === selectedKey) : null;
+  const selectedProfile = selectedCustomer
+    ? customerProfiles.find((profile) => profile.customer === selectedCustomer.customer && profile.hostId === selectedCustomer.hostId)
+    : undefined;
+  const selectedBottles = selectedCustomer
+    ? bottles.filter((bottle) => bottle.customer === selectedCustomer.customer && bottle.hostId === selectedCustomer.hostId)
+    : [];
 
   return (
     <div className="customer-management">
@@ -4808,6 +5074,24 @@ function CustomerManagementPanel({
         )}
       </div>
 
+      {customerProfiles.length > 0 && (
+        <div className="customer-profile-editor-list">
+          {customerProfiles.map((profile) => (
+            <div className="customer-profile-editor-row" key={profile.id}>
+              <div className="customer-profile-title">
+                <span>{profile.customer}</span>
+                <small>{hostName(profile.hostId)}</small>
+              </div>
+              <TextField label="誕生日" value={profile.birthday} onChange={(birthday) => onUpdateCustomerProfile(profile.id, { birthday })} />
+              <TextField label="好み" value={profile.favoriteDrink} onChange={(favoriteDrink) => onUpdateCustomerProfile(profile.id, { favoriteDrink })} />
+              <TextField label="連絡" value={profile.lastContact} onChange={(lastContact) => onUpdateCustomerProfile(profile.id, { lastContact })} />
+              <TextField label="メモ" value={profile.visitNote} onChange={(visitNote) => onUpdateCustomerProfile(profile.id, { visitNote })} />
+              <TextField label="注意" value={profile.caution} onChange={(caution) => onUpdateCustomerProfile(profile.id, { caution })} />
+            </div>
+          ))}
+        </div>
+      )}
+
       {selectedCustomer && (
         <CustomerDetailModal
           title={`${selectedCustomer.customer} / ${hostName(selectedCustomer.hostId)}`}
@@ -4815,9 +5099,107 @@ function CustomerManagementPanel({
           total={selectedCustomer.total}
           hostName={hostName}
           receivablesEnabled={receivablesEnabled}
+          profile={selectedProfile}
+          bottles={selectedBottles}
           onClose={() => setSelectedKey(null)}
         />
       )}
+    </div>
+  );
+}
+
+const bottleStatusOptions = [
+  { label: "有効", value: "active" },
+  { label: "残少", value: "low" },
+  { label: "空", value: "empty" }
+];
+
+const bottleStatusLabel: Record<BottleKeep["status"], string> = {
+  active: "有効",
+  low: "残少",
+  empty: "空"
+};
+
+function BottleManagementPanel({
+  hosts,
+  bottles,
+  hostName,
+  onAddBottle,
+  onUpdateBottle,
+  onDeleteBottle
+}: {
+  hosts: Host[];
+  bottles: BottleKeep[];
+  hostName: (hostId?: number) => string;
+  onAddBottle: () => void;
+  onUpdateBottle: (id: number, patch: Partial<BottleKeep>) => void;
+  onDeleteBottle: (id: number) => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleBottles = bottles
+    .filter((bottle) => {
+      if (!normalizedSearch) return true;
+      const searchableText = `${bottle.customer} ${hostName(bottle.hostId)} ${bottle.bottleName} ${bottle.memo} ${bottleStatusLabel[bottle.status]}`.toLowerCase();
+      return searchableText.includes(normalizedSearch);
+    })
+    .sort((a, b) => a.status.localeCompare(b.status) || a.expiresAt.localeCompare(b.expiresAt));
+
+  return (
+    <div className="bottle-management">
+      <div className="customer-management-toolbar">
+        <label className="search-shell customer-management-search">
+          <span>検索</span>
+          <input
+            type="search"
+            value={search}
+            placeholder="客名・担当・ボトル"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <button className="icon-text-button" type="button" onClick={onAddBottle}>
+          <Plus size={16} />
+          追加
+        </button>
+      </div>
+
+      <div className="bottle-management-list">
+        {visibleBottles.length === 0 ? (
+          <div className="plain-note">
+            <ClipboardList size={18} />
+            <div>
+              <strong>ボトルなし</strong>
+              <p>ボトルを追加するとここに表示されます。</p>
+            </div>
+          </div>
+        ) : (
+          visibleBottles.map((bottle) => (
+            <div className={`bottle-row bottle-${bottle.status}`} key={bottle.id}>
+              <TextField label="客名" value={bottle.customer} onChange={(customer) => onUpdateBottle(bottle.id, { customer })} />
+              <SelectField
+                label="担当"
+                value={String(bottle.hostId)}
+                options={hosts.map((host) => ({ label: host.name, value: String(host.id) }))}
+                onChange={(hostId) => onUpdateBottle(bottle.id, { hostId: Number(hostId) })}
+              />
+              <TextField label="ボトル" value={bottle.bottleName} onChange={(bottleName) => onUpdateBottle(bottle.id, { bottleName })} />
+              <NumberField label="残量%" value={bottle.remaining} min={0} max={100} step={5} onChange={(remaining) => onUpdateBottle(bottle.id, { remaining })} />
+              <TextField label="開封" value={bottle.openedDate} onChange={(openedDate) => onUpdateBottle(bottle.id, { openedDate })} />
+              <TextField label="期限" value={bottle.expiresAt} onChange={(expiresAt) => onUpdateBottle(bottle.id, { expiresAt })} />
+              <SelectField
+                label="状態"
+                value={bottle.status}
+                options={bottleStatusOptions}
+                onChange={(status) => onUpdateBottle(bottle.id, { status: status as BottleKeep["status"] })}
+              />
+              <TextField label="メモ" value={bottle.memo} onChange={(memo) => onUpdateBottle(bottle.id, { memo })} />
+              <button className="icon-button danger-button" type="button" aria-label="ボトル削除" onClick={() => onDeleteBottle(bottle.id)}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
