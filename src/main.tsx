@@ -6,6 +6,7 @@ import {
   BarChart3,
   Camera,
   CheckCircle2,
+  Clock,
   ClipboardList,
   Coins,
   Download,
@@ -21,6 +22,7 @@ import {
   Smartphone,
   Trash2,
   Trophy,
+  Upload,
   UserCog,
   UserRound,
   Users,
@@ -77,6 +79,7 @@ type Receivable = {
   customer: string;
   hostId: number;
   amount: number;
+  date: string;
   due: string;
   status: ReceivableStatus;
   collection: ReceivableCollection;
@@ -129,14 +132,12 @@ type BottleKeep = {
   customer: string;
   hostId: number;
   bottleName: string;
-  remaining: number;
   openedDate: string;
   expiresAt: string;
   memo: string;
-  status: "active" | "low" | "empty";
 };
 
-type CustomerActionKind = "visit" | "nomination" | "dohan" | "after" | "follow";
+type CustomerActionKind = "visit" | "dohan";
 type CustomerActionStatus = "todo" | "done" | "missed";
 
 type CustomerAction = {
@@ -176,6 +177,18 @@ type Expense = {
   receiptStatus: "手入力" | "レシート読取";
 };
 
+type PayrollItem = {
+  id: number;
+  label: string;
+  amount: number;
+};
+
+type PayrollAdjustment = {
+  rate?: number;
+  additions: PayrollItem[];
+  deductions: PayrollItem[];
+};
+
 type RegisterClose = {
   id: number;
   date: string;
@@ -189,17 +202,50 @@ type RegisterClose = {
   memo: string;
 };
 
+type DeviceLogin = {
+  id: string;
+  storeId: string;
+  userId: number;
+  userName: string;
+  role: Role;
+  loginAt: string;
+  expiresAt: number;
+  userAgent: string;
+  current: boolean;
+};
+
 type OperationLog = {
   id: number;
   date: string;
   time: string;
   actor: string;
   role: string;
-  scope: "会計" | "経費" | "締め";
-  action: "登録" | "編集" | "削除" | "保存";
+  scope: "会計" | "経費" | "締め" | "来店予定" | "ボトル" | "給与";
+  action: "登録" | "編集" | "削除" | "保存" | "移動";
   target: string;
   amount: number;
   detail: string;
+};
+
+type AppBackupPayload = {
+  version: number;
+  exportedAt: string;
+  data: {
+    hosts: Host[];
+    users: AppUser[];
+    receivables: Receivable[];
+    receivablePayments: ReceivablePayment[];
+    tableChecks: TableCheck[];
+    customerProfiles: CustomerProfile[];
+    bottles: BottleKeep[];
+    customerActions: CustomerAction[];
+    openTables: OpenTable[];
+    expenses: Expense[];
+    registerCloses: RegisterClose[];
+    payrollAdjustments: Record<number, PayrollAdjustment>;
+    operationLogs: OperationLog[];
+    storeSettings: StoreSettings;
+  };
 };
 
 type StoreSettings = {
@@ -229,6 +275,9 @@ const storeAccounts: StoreAccount[] = [
 ];
 
 const savedDeviceKey = "store-pilot-device-session";
+const deviceLogKey = "store-pilot-device-log";
+const appDataStoragePrefix = "store-pilot-data-v1";
+const appDataBackupVersion = 1;
 const deviceSessionMs = 1000 * 60 * 60 * 24 * 30;
 
 const categoryOptions = [
@@ -252,29 +301,22 @@ const expenseTaxRateLabel = (rate?: number) => (rate === 8 ? "8%" : rate === 0 ?
 
 const customerActionKindOptions: Array<{ label: string; value: CustomerActionKind }> = [
   { label: "来店", value: "visit" },
-  { label: "指名", value: "nomination" },
-  { label: "同伴", value: "dohan" },
-  { label: "アフター", value: "after" },
-  { label: "連絡", value: "follow" }
+  { label: "同伴", value: "dohan" }
 ];
 
 const customerActionKindLabel: Record<CustomerActionKind, string> = {
   visit: "来店",
-  nomination: "指名",
-  dohan: "同伴",
-  after: "アフター",
-  follow: "連絡"
+  dohan: "同伴"
 };
 
 const customerActionStatusOptions: Array<{ label: string; value: CustomerActionStatus }> = [
-  { label: "予定", value: "todo" },
-  { label: "完了", value: "done" },
+  { label: "来店予定", value: "todo" },
   { label: "未対応", value: "missed" }
 ];
 
 const customerActionStatusLabel: Record<CustomerActionStatus, string> = {
-  todo: "予定",
-  done: "完了",
+  todo: "来店予定",
+  done: "処理済",
   missed: "未対応"
 };
 
@@ -378,6 +420,7 @@ const initialReceivables: Receivable[] = [
     customer: "A様",
     hostId: 3,
     amount: 430000,
+    date: "2026-06-29",
     due: "6/30",
     status: "danger",
     collection: "active",
@@ -388,6 +431,7 @@ const initialReceivables: Receivable[] = [
     customer: "M様",
     hostId: 1,
     amount: 280000,
+    date: "2026-06-29",
     due: "7/02",
     status: "soon",
     collection: "payrollDeducted",
@@ -398,6 +442,7 @@ const initialReceivables: Receivable[] = [
     customer: "R様",
     hostId: 2,
     amount: 160000,
+    date: "2026-06-29",
     due: "7/05",
     status: "ok",
     collection: "payrollDeducted",
@@ -468,7 +513,7 @@ const initialCustomerProfiles: CustomerProfile[] = [
     customer: "A様",
     hostId: 1,
     birthday: "8/12",
-    favoriteDrink: "シャンパン・甘め",
+    favoriteDrink: "鏡月",
     visitNote: "月末に来店多め。早い時間は短時間になりやすい。",
     caution: "同席者の前で売掛の話はしない",
     lastContact: "2026-06-30 LINE返信あり"
@@ -500,34 +545,28 @@ const initialBottles: BottleKeep[] = [
     id: 1,
     customer: "A様",
     hostId: 1,
-    bottleName: "ソウメイ ブリュット",
-    remaining: 65,
+    bottleName: "飾りボトル",
     openedDate: "2026-06-12",
     expiresAt: "2026-09-12",
-    memo: "次回来店時に優先確認",
-    status: "active"
+    memo: "次回来店時に優先確認"
   },
   {
     id: 2,
     customer: "M様",
     hostId: 3,
-    bottleName: "ベルエポック",
-    remaining: 20,
+    bottleName: "鏡月",
     openedDate: "2026-05-28",
     expiresAt: "2026-08-28",
-    memo: "残量少なめ。追加提案候補",
-    status: "low"
+    memo: "卓に出す用"
   },
   {
     id: 3,
     customer: "R様",
     hostId: 2,
     bottleName: "吉四六",
-    remaining: 0,
     openedDate: "2026-04-18",
     expiresAt: "2026-07-18",
-    memo: "空。次回来店時に新規確認",
-    status: "empty"
+    memo: "次回来店時に新規確認"
   }
 ];
 
@@ -541,7 +580,7 @@ const initialCustomerActions: CustomerAction[] = [
     kind: "dohan",
     targetAmount: 300000,
     status: "todo",
-    memo: "同伴後にVIP確認。ボトル残量も見る"
+    memo: "同伴後にVIP確認。飾りボトル確認"
   },
   {
     id: 2,
@@ -560,7 +599,7 @@ const initialCustomerActions: CustomerAction[] = [
     hostId: 2,
     date: "2026-07-03",
     time: "20:30",
-    kind: "follow",
+    kind: "visit",
     targetAmount: 0,
     status: "todo",
     memo: "入金確認後に来店打診"
@@ -653,6 +692,8 @@ const parsePlainNumber = (value: string) => Number(value.replace(/[^\d.-]/g, "")
 const money = plainNumber;
 const compactMoney = plainNumber;
 const csvCell = (value: string | number | undefined) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+const htmlEscape = (value: string | number | undefined) =>
+  String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const maxTableAmount = 100000000;
 const clampTableAmount = (value: number) => Math.min(maxTableAmount, Math.max(0, value));
 const clampGuests = (value: number) => Math.min(99, Math.max(1, value || 1));
@@ -699,6 +740,63 @@ const downloadExpenseCategoryCsv = (items: Expense[], filename: string) => {
     })
     .filter((row) => Number(row[1]) > 0);
   downloadCsv(header, rows, filename);
+};
+
+const downloadChecksCsv = (items: TableCheck[], hosts: Host[], receivablesEnabled: boolean, filename: string) => {
+  const hostName = (hostId?: number) => hosts.find((host) => host.id === hostId)?.name ?? "未設定";
+  const header = ["日付", "時間", "卓番", "客名", "担当", "人数", "小計", "税サ", "消費税", "値引", "合計", "現金", "カード", "売掛", "支払"];
+  const rows = items.map((check) => [
+    check.date,
+    check.time,
+    check.table,
+    check.customerName,
+    hostName(check.hostId),
+    check.guests,
+    check.subtotal,
+    check.serviceRate,
+    check.taxRate,
+    check.discount,
+    tableTotal(check),
+    check.cashAmount,
+    check.cardAmount,
+    receivablesEnabled ? check.receivableAmount : 0,
+    paymentLabelForDisplay(check, receivablesEnabled)
+  ]);
+  downloadCsv(header, rows, filename);
+};
+
+const downloadClosesCsv = (items: RegisterClose[], filename: string) => {
+  const header = ["日付", "時間", "担当", "開始レジ金", "途中入金", "予想現金", "実残現金", "差額", "メモ"];
+  const rows = items.map((item) => [
+    item.date,
+    item.time,
+    item.closedBy,
+    item.startCash,
+    item.cashInjection,
+    item.expectedCash,
+    item.actualCash,
+    item.difference,
+    item.memo
+  ]);
+  downloadCsv(header, rows, filename);
+};
+
+const printDocument = (title: string, bodyHtml: string) => {
+  const popup = window.open("", "_blank", "width=900,height=720");
+  if (!popup) return false;
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;color:#111827}
+    h1{font-size:20px;margin:0 0 12px} h2{font-size:15px;margin:18px 0 8px}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+    th,td{border:1px solid #d1d5db;padding:7px 8px;text-align:left}
+    th{background:#f3f4f6} td.amount{text-align:right;font-variant-numeric:tabular-nums}
+    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+    .box{border:1px solid #d1d5db;padding:10px}.box span{display:block;color:#6b7280;font-size:11px}.box b{font-size:16px}
+    @media print{button{display:none} body{margin:12mm}}
+  </style></head><body><button onclick="window.print()">PDF保存/印刷</button>${bodyHtml}</body></html>`);
+  popup.document.close();
+  popup.focus();
+  return true;
 };
 
 const tableTotal = (check: TableCheck) => {
@@ -818,12 +916,30 @@ const formatDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const currentTime = (now = new Date()) => `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+const hourOptions = Array.from({ length: 24 }, (_, hour) => {
+  const value = String(hour).padStart(2, "0");
+  return { label: value, value };
+});
+const minuteOptions = Array.from({ length: 60 }, (_, minute) => {
+  const value = String(minute).padStart(2, "0");
+  return { label: value, value };
+});
+const normalizeActionTime = (time: string) => {
+  const [hour = "00", minute = "00"] = time.split(":");
+  const normalizedHour = String(Math.min(23, Math.max(0, Number(hour) || 0))).padStart(2, "0");
+  const normalizedMinute = String(Math.min(59, Math.max(0, Number(minute) || 0))).padStart(2, "0");
+  return `${normalizedHour}:${normalizedMinute}`;
+};
 
 const dateFromShortDue = (due: string, fallbackYear: string) => {
   const [month, day] = due.split("/");
   if (!month || !day) return "";
   return `${fallbackYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 };
+
+const receivableBusinessDate = (item: Receivable, checkDateById: Map<number, string>, fallbackYear: string) =>
+  item.sourceCheckId ? checkDateById.get(item.sourceCheckId) ?? item.date : item.date || dateFromShortDue(item.due, fallbackYear);
 
 const businessDateFor = (settings: StoreSettings, now = new Date()) => {
   const businessDate = new Date(now);
@@ -839,6 +955,7 @@ const receivableFromCheck = (check: TableCheck): Receivable => ({
   customer: check.customerName,
   hostId: check.hostId,
   amount: check.receivableAmount,
+  date: check.date,
   due: check.date.slice(5).replace("-", "/"),
   status: "soon",
   collection: "active",
@@ -899,23 +1016,139 @@ const saveDevice = (storeId: string, userId: number) => {
 };
 
 const clearSavedDevice = () => window.localStorage.removeItem(savedDeviceKey);
+const readDeviceLog = () => {
+  try {
+    const raw = window.localStorage.getItem(deviceLogKey);
+    if (!raw) return [] as DeviceLogin[];
+    const items = JSON.parse(raw) as DeviceLogin[];
+    return Array.isArray(items) ? items.filter((item) => item.expiresAt > Date.now()).slice(0, 50) : [];
+  } catch {
+    return [] as DeviceLogin[];
+  }
+};
+const writeDeviceLog = (items: DeviceLogin[]) => {
+  window.localStorage.setItem(deviceLogKey, JSON.stringify(items.slice(0, 50)));
+};
+const recordDeviceLogin = (storeId: string, user: AppUser) => {
+  const expiresAt = Date.now() + deviceSessionMs;
+  const currentSession = {
+    id: `${storeId}-${user.id}-${Date.now()}`,
+    storeId,
+    userId: user.id,
+    userName: user.name,
+    role: user.role,
+    loginAt: new Date().toISOString(),
+    expiresAt,
+    userAgent: navigator.userAgent,
+    current: true
+  } satisfies DeviceLogin;
+  const existing = readDeviceLog().map((item) => ({ ...item, current: false }));
+  writeDeviceLog([currentSession, ...existing]);
+};
+const clearDeviceLog = () => window.localStorage.removeItem(deviceLogKey);
+const blankPayrollAdjustment = (): PayrollAdjustment => ({ additions: [], deductions: [] });
+const appDataStorageKey = (name: string) => `${appDataStoragePrefix}:${name}`;
+
+const safeReadStorage = <T,>(key: string, fallback: T, normalize?: (value: T) => T) => {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as T;
+    return normalize ? normalize(parsed) : parsed;
+  } catch {
+    return fallback;
+  }
+};
+
+const usePersistentState = <T,>(key: string, initialValue: T, normalize?: (value: T) => T) => {
+  const [value, setValue] = React.useState<T>(() => safeReadStorage(key, initialValue, normalize));
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage can be unavailable in private mode; the app should still run.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+};
+
+const normalizeHosts = (items: Host[]) => (Array.isArray(items) && items.length > 0 ? items : initialHosts);
+const normalizeUsers = (items: AppUser[]) => (Array.isArray(items) && items.length > 0 ? items : initialUsers);
+const normalizeReceivables = (items: Receivable[]) =>
+  Array.isArray(items)
+    ? items.map((item) => ({
+        ...item,
+        date: item.date || (item.due.startsWith("7/") ? "2026-06-29" : dateFromShortDue(item.due, "2026")) || "2026-06-29",
+        collection: item.collection ?? "active",
+        memo: item.memo ?? ""
+      }))
+    : initialReceivables;
+const normalizeExpenses = (items: Expense[]) =>
+  Array.isArray(items)
+    ? items.map((item) => ({
+        ...item,
+        taxRate: item.taxRate ?? 10,
+        paymentMethod: item.paymentMethod ?? "現金",
+        receiptStatus: item.receiptStatus ?? "手入力"
+      }))
+    : initialExpenses;
+const normalizePayrollAdjustments = (items: Record<number, PayrollAdjustment>) =>
+  Object.fromEntries(
+    Object.entries(items ?? {}).map(([hostId, adjustment]) => [
+      hostId,
+      {
+        ...adjustment,
+        additions: Array.isArray(adjustment?.additions) ? adjustment.additions : [],
+        deductions: Array.isArray(adjustment?.deductions) ? adjustment.deductions : []
+      }
+    ])
+  );
+const normalizeStoreSettings = (settings: StoreSettings) => ({
+  ...defaultStoreSettings,
+  ...(settings ?? {}),
+  withholdingTaxRate: settings?.withholdingTaxRate === 10.21 ? 10.21 : 0,
+  receivablesEnabled: settings?.receivablesEnabled ?? true
+});
+const asArray = <T,>(value: unknown, fallback: T[]) => (Array.isArray(value) ? (value as T[]) : fallback);
 
 function App() {
   const [currentUser, setCurrentUser] = React.useState<AppUser | null>(null);
   const [currentStoreId, setCurrentStoreId] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<Tab>("dashboard");
-  const [hosts, setHosts] = React.useState<Host[]>(initialHosts);
-  const [users, setUsers] = React.useState<AppUser[]>(initialUsers);
-  const [receivables, setReceivables] = React.useState<Receivable[]>(initialReceivables);
-  const [receivablePayments, setReceivablePayments] = React.useState<ReceivablePayment[]>([]);
-  const [tableChecks, setTableChecks] = React.useState<TableCheck[]>(initialTableChecks);
-  const [customerProfiles, setCustomerProfiles] = React.useState<CustomerProfile[]>(initialCustomerProfiles);
-  const [bottles, setBottles] = React.useState<BottleKeep[]>(initialBottles);
-  const [customerActions, setCustomerActions] = React.useState<CustomerAction[]>(initialCustomerActions);
-  const [openTables, setOpenTables] = React.useState<OpenTable[]>(initialOpenTables);
-  const [expenses, setExpenses] = React.useState<Expense[]>(initialExpenses);
-  const [registerCloses, setRegisterCloses] = React.useState<RegisterClose[]>([]);
-  const [operationLogs, setOperationLogs] = React.useState<OperationLog[]>([]);
+  const [hosts, setHosts] = usePersistentState<Host[]>(appDataStorageKey("hosts"), initialHosts, normalizeHosts);
+  const [users, setUsers] = usePersistentState<AppUser[]>(appDataStorageKey("users"), initialUsers, normalizeUsers);
+  const [receivables, setReceivables] = usePersistentState<Receivable[]>(
+    appDataStorageKey("receivables"),
+    initialReceivables,
+    normalizeReceivables
+  );
+  const [receivablePayments, setReceivablePayments] = usePersistentState<ReceivablePayment[]>(
+    appDataStorageKey("receivable-payments"),
+    []
+  );
+  const [tableChecks, setTableChecks] = usePersistentState<TableCheck[]>(appDataStorageKey("table-checks"), initialTableChecks);
+  const [customerProfiles, setCustomerProfiles] = usePersistentState<CustomerProfile[]>(
+    appDataStorageKey("customer-profiles"),
+    initialCustomerProfiles
+  );
+  const [bottles, setBottles] = usePersistentState<BottleKeep[]>(appDataStorageKey("bottles"), initialBottles);
+  const [customerActions, setCustomerActions] = usePersistentState<CustomerAction[]>(
+    appDataStorageKey("customer-actions"),
+    initialCustomerActions
+  );
+  const [openTables, setOpenTables] = usePersistentState<OpenTable[]>(appDataStorageKey("open-tables"), initialOpenTables);
+  const [expenses, setExpenses] = usePersistentState<Expense[]>(appDataStorageKey("expenses"), initialExpenses, normalizeExpenses);
+  const [registerCloses, setRegisterCloses] = usePersistentState<RegisterClose[]>(appDataStorageKey("register-closes"), []);
+  const [payrollAdjustments, setPayrollAdjustments] = usePersistentState<Record<number, PayrollAdjustment>>(
+    appDataStorageKey("payroll-adjustments"),
+    {},
+    normalizePayrollAdjustments
+  );
+  const [operationLogs, setOperationLogs] = usePersistentState<OperationLog[]>(appDataStorageKey("operation-logs"), []);
   const [selectedHostId, setSelectedHostId] = React.useState(initialHosts[0].id);
   const [draftCheck, setDraftCheck] = React.useState<TableCheck>(blankCheck(initialHosts[0].id));
   const [editingCheckId, setEditingCheckId] = React.useState<number | null>(null);
@@ -924,7 +1157,12 @@ function App() {
   const [expenseDraft, setExpenseDraft] = React.useState<Expense>(blankExpense(initialHosts[0].id));
   const [editingExpenseId, setEditingExpenseId] = React.useState<number | null>(null);
   const [notice, setNotice] = React.useState("準備完了");
-  const [storeSettings, setStoreSettings] = React.useState<StoreSettings>(defaultStoreSettings);
+  const [storeSettings, setStoreSettings] = usePersistentState<StoreSettings>(
+    appDataStorageKey("settings"),
+    defaultStoreSettings,
+    normalizeStoreSettings
+  );
+  const [deviceLog, setDeviceLog] = React.useState<DeviceLogin[]>(() => readDeviceLog());
   const [installPrompt, setInstallPrompt] = React.useState<InstallPromptEvent | null>(null);
   const [installHint, setInstallHint] = React.useState("ホーム追加");
 
@@ -1048,6 +1286,8 @@ function App() {
     setCurrentStoreId(store.id);
     setCurrentUser(user);
     saveDevice(store.id, user.id);
+    recordDeviceLogin(store.id, user);
+    setDeviceLog(readDeviceLog());
   };
 
   const handleLogout = () => {
@@ -1059,6 +1299,81 @@ function App() {
   const handleClearDevice = () => {
     clearSavedDevice();
     setNotice("この端末のログイン保存を削除しました");
+  };
+
+  const handleClearAllDeviceLog = () => {
+    clearDeviceLog();
+    clearSavedDevice();
+    setDeviceLog([]);
+    setNotice("保存端末情報を削除しました");
+  };
+
+  const createBackupPayload = (): AppBackupPayload => ({
+    version: appDataBackupVersion,
+    exportedAt: new Date().toISOString(),
+    data: {
+      hosts,
+      users,
+      receivables,
+      receivablePayments,
+      tableChecks,
+      customerProfiles,
+      bottles,
+      customerActions,
+      openTables,
+      expenses,
+      registerCloses,
+      payrollAdjustments,
+      operationLogs,
+      storeSettings
+    }
+  });
+
+  const exportBackup = () => {
+    const payload = createBackupPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `store-pilot-backup-${businessDateFor(storeSettings)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setNotice("業務データを出力しました");
+  };
+
+  const importBackup = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || "{}")) as Partial<AppBackupPayload>;
+        const data = parsed.data;
+        if (!data || typeof data !== "object") {
+          setNotice("復元できるバックアップではありません");
+          return;
+        }
+        setHosts(normalizeHosts(asArray<Host>(data.hosts, initialHosts)));
+        setUsers(normalizeUsers(asArray<AppUser>(data.users, initialUsers)));
+        setReceivables(normalizeReceivables(asArray<Receivable>(data.receivables, initialReceivables)));
+        setReceivablePayments(asArray<ReceivablePayment>(data.receivablePayments, []));
+        setTableChecks(asArray<TableCheck>(data.tableChecks, initialTableChecks));
+        setCustomerProfiles(asArray<CustomerProfile>(data.customerProfiles, initialCustomerProfiles));
+        setBottles(asArray<BottleKeep>(data.bottles, initialBottles));
+        setCustomerActions(asArray<CustomerAction>(data.customerActions, initialCustomerActions));
+        setOpenTables(asArray<OpenTable>(data.openTables, initialOpenTables));
+        setExpenses(normalizeExpenses(asArray<Expense>(data.expenses, initialExpenses)));
+        setRegisterCloses(asArray<RegisterClose>(data.registerCloses, []));
+        setPayrollAdjustments(normalizePayrollAdjustments(data.payrollAdjustments ?? {}));
+        setOperationLogs(asArray<OperationLog>(data.operationLogs, []));
+        setStoreSettings(normalizeStoreSettings(data.storeSettings ?? defaultStoreSettings));
+        setNotice("バックアップから復元しました");
+      } catch {
+        setNotice("バックアップの読み込みに失敗しました");
+      }
+    };
+    reader.onerror = () => setNotice("バックアップの読み込みに失敗しました");
+    reader.readAsText(file);
   };
 
   const displayHosts = React.useMemo(() => {
@@ -1147,13 +1462,11 @@ function App() {
   const currentHostBusinessChecks = currentBusinessChecks.filter((check) => check.hostId === selectedHost.id);
   const todayCheckoutTotal = currentBusinessChecks.reduce((sum, check) => sum + tableTotal(check), 0);
   const hostTodaySales = currentHostBusinessChecks.reduce((sum, check) => sum + tableTotal(check), 0);
-  const hostMonthExpenses =
-    selectedHost.expenses +
-    expenses
-      .filter((expense) => expense.ownerType === "host" && expense.hostId === selectedHost.id)
-      .reduce((sum, expense) => sum + expense.amount, 0);
   const canManage = currentUser?.role === "admin";
   const canOperate = currentUser?.role === "admin" || currentUser?.role === "staff";
+  const closedDateSet = React.useMemo(() => new Set(registerCloses.map((item) => item.date)), [registerCloses]);
+  const isClosedDate = (date: string) => closedDateSet.has(date);
+  const showLockedNotice = (date: string) => setNotice(`${date} は締め済みです。修正する場合は管理者確認が必要です。`);
 
   const addOperationLog = (entry: Omit<OperationLog, "id" | "date" | "time" | "actor" | "role">) => {
     if (!currentUser) return;
@@ -1184,6 +1497,30 @@ function App() {
       },
       ...current
     ]);
+  };
+
+  const addOpenTableFromAction = (action: CustomerAction) => {
+    const nextTable: OpenTable = {
+      id: Date.now(),
+      table: "未定",
+      guests: 2,
+      hostId: action.hostId,
+      customerName: action.customer || "名前未入力",
+      currentAmount: 0,
+      targetAmount: action.targetAmount || 100000,
+      time: normalizeActionTime(action.time)
+    };
+    upsertCustomerProfile(nextTable.customerName, nextTable.hostId);
+    setOpenTables((current) => [nextTable, ...current]);
+    setCustomerActions((current) => current.filter((item) => item.id !== action.id));
+    addOperationLog({
+      scope: "来店予定",
+      action: "移動",
+      target: `${action.customer} / 未会計の卓`,
+      amount: action.targetAmount,
+      detail: `${hostName(action.hostId)} / ${action.date} ${action.time}`
+    });
+    setNotice(`${action.customer} を未会計の卓に追加`);
   };
 
   const updateOpenTable = (id: number, patch: Partial<OpenTable>) => {
@@ -1230,6 +1567,11 @@ function App() {
   const saveCheck = () => {
     const previousCheck = editingCheckId !== null ? tableChecks.find((check) => check.id === editingCheckId) : undefined;
     const normalizedDraft = withAutoReceivable(draftCheck, storeSettings);
+    const targetDate = editingCheckId === null ? businessDateFor(storeSettings) : draftCheck.date;
+    if (isClosedDate(targetDate)) {
+      showLockedNotice(targetDate);
+      return;
+    }
     const checkTotal = tableTotal(normalizedDraft);
     if (normalizedDraft.cashAmount + normalizedDraft.cardAmount > checkTotal) {
       setNotice("現金＋カードが合計を超えています。差額がマイナスの会計は保存できません。");
@@ -1243,7 +1585,7 @@ function App() {
       taxRate: storeSettings.taxRate,
       payment: paymentLabel(normalizedDraft),
       status: normalizedReceivable > 0 ? "receivable" : "paid",
-      date: editingCheckId === null ? businessDateFor(storeSettings) : draftCheck.date,
+      date: targetDate,
       time: editingCheckId === null ? normalizedDraft.time : draftCheck.time
     } satisfies TableCheck;
 
@@ -1278,6 +1620,10 @@ function App() {
 
   const deleteCheck = (id: number) => {
     const targetCheck = tableChecks.find((check) => check.id === id);
+    if (targetCheck && isClosedDate(targetCheck.date)) {
+      showLockedNotice(targetCheck.date);
+      return;
+    }
     setTableChecks((current) => current.filter((check) => check.id !== id));
     setReceivables((current) => current.filter((item) => item.sourceCheckId !== id));
     if (targetCheck) {
@@ -1303,6 +1649,10 @@ function App() {
     const ownerType = overrides.ownerType ?? (isHostExpense ? "host" : "store");
     const hostId = ownerType === "host" ? overrides.hostId ?? currentUser?.hostId ?? selectedHostId : undefined;
     const mergedExpense = { ...expenseDraft, ...overrides };
+    if (isClosedDate(mergedExpense.date)) {
+      showLockedNotice(mergedExpense.date);
+      return;
+    }
     const normalizedTaxRate = [0, 8, 10].includes(Number(mergedExpense.taxRate)) ? Number(mergedExpense.taxRate) as ExpenseTaxRate : 10;
     const nextExpense = {
       ...mergedExpense,
@@ -1333,6 +1683,10 @@ function App() {
 
   const deleteExpense = (id: number) => {
     const targetExpense = expenses.find((item) => item.id === id);
+    if (targetExpense && isClosedDate(targetExpense.date)) {
+      showLockedNotice(targetExpense.date);
+      return;
+    }
     setExpenses((current) => current.filter((item) => item.id !== id));
     if (targetExpense) {
       addOperationLog({
@@ -1351,6 +1705,27 @@ function App() {
 
   const updateCustomerProfile = (id: number, patch: Partial<CustomerProfile>) => {
     setCustomerProfiles((current) => current.map((profile) => (profile.id === id ? { ...profile, ...patch } : profile)));
+  };
+
+  const saveCustomerCaution = (customer: string, hostId: number, caution: string) => {
+    const existingProfile = customerProfiles.find((profile) => profile.customer === customer && profile.hostId === hostId);
+    if (existingProfile) {
+      updateCustomerProfile(existingProfile.id, { caution });
+      return;
+    }
+    setCustomerProfiles((current) => [
+      {
+        id: Date.now(),
+        customer,
+        hostId,
+        birthday: "",
+        favoriteDrink: "",
+        visitNote: "",
+        caution,
+        lastContact: ""
+      },
+      ...current
+    ]);
   };
 
   const upsertCustomerProfile = (customer: string, hostId: number) => {
@@ -1378,12 +1753,10 @@ function App() {
       id: Date.now(),
       customer,
       hostId,
-      bottleName: "ボトル名未入力",
-      remaining: 100,
+      bottleName: "鏡月",
       openedDate: currentBusinessDate,
       expiresAt: currentBusinessDate,
-      memo: "",
-      status: "active"
+      memo: ""
     };
     setBottles((current) => [nextBottle, ...current]);
     addOperationLog({
@@ -1398,9 +1771,7 @@ function App() {
     setBottles((current) =>
       current.map((bottle) => {
         if (bottle.id !== id) return bottle;
-        const nextRemaining = typeof patch.remaining === "number" ? Math.max(0, Math.min(100, patch.remaining)) : bottle.remaining;
-        const nextStatus = patch.status ?? (nextRemaining <= 0 ? "empty" : nextRemaining <= 25 ? "low" : "active");
-        return { ...bottle, ...patch, remaining: nextRemaining, status: nextStatus };
+        return { ...bottle, ...patch };
       })
     );
   };
@@ -1418,21 +1789,21 @@ function App() {
     }
   };
 
-  const addCustomerAction = () => {
+  const addCustomerAction = (patch: Partial<CustomerAction> = {}) => {
     const nextAction: CustomerAction = {
       id: Date.now(),
-      customer: "新規顧客",
-      hostId: selectedHostId,
-      date: currentBusinessDate,
-      time: currentTime(),
-      kind: "visit",
-      targetAmount: 0,
-      status: "todo",
-      memo: ""
+      customer: patch.customer || "新規顧客",
+      hostId: patch.hostId ?? selectedHostId,
+      date: patch.date || currentBusinessDate,
+      time: patch.time || currentTime(),
+      kind: patch.kind ?? "visit",
+      targetAmount: patch.targetAmount ?? 0,
+      status: patch.status ?? "todo",
+      memo: patch.memo ?? ""
     };
     setCustomerActions((current) => [nextAction, ...current]);
     addOperationLog({
-      scope: "予定",
+      scope: "来店予定",
       action: "登録",
       target: `${nextAction.customer} / ${customerActionKindLabel[nextAction.kind]}`,
       detail: `${hostName(nextAction.hostId)} / ${nextAction.date} ${nextAction.time}`
@@ -1443,25 +1814,12 @@ function App() {
     setCustomerActions((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const completeCustomerAction = (id: number) => {
-    const targetAction = customerActions.find((item) => item.id === id);
-    setCustomerActions((current) => current.map((item) => (item.id === id ? { ...item, status: "done" } : item)));
-    if (targetAction) {
-      addOperationLog({
-        scope: "予定",
-        action: "完了",
-        target: `${targetAction.customer} / ${customerActionKindLabel[targetAction.kind]}`,
-        detail: `${hostName(targetAction.hostId)} / ${targetAction.date} ${targetAction.time}`
-      });
-    }
-  };
-
   const deleteCustomerAction = (id: number) => {
     const targetAction = customerActions.find((item) => item.id === id);
     setCustomerActions((current) => current.filter((item) => item.id !== id));
     if (targetAction) {
       addOperationLog({
-        scope: "予定",
+        scope: "来店予定",
         action: "削除",
         target: `${targetAction.customer} / ${customerActionKindLabel[targetAction.kind]}`,
         detail: `${hostName(targetAction.hostId)} / ${targetAction.date} ${targetAction.time}`
@@ -1471,6 +1829,10 @@ function App() {
 
   const saveRegisterClose = (actualCash: number, expectedCash: number, startCash: number, cashInjection: number, memo: string) => {
     if (!currentUser || !canOperate) return;
+    if (isClosedDate(currentBusinessDate)) {
+      setNotice(`${currentBusinessDate} はすでに締め済みです`);
+      return;
+    }
     const difference = actualCash - expectedCash;
     setRegisterCloses((current) => [
       {
@@ -1630,7 +1992,9 @@ function App() {
             currentBusinessDate={currentBusinessDate}
             onAddOpenTable={() => addOpenTable(selectedHost.id)}
             onUpdateOpenTable={updateOpenTable}
-            onCompleteAction={completeCustomerAction}
+            onAddAction={(action) => addCustomerAction({ ...action, hostId: selectedHost.id, date: currentBusinessDate })}
+            onMoveActionToOpenTable={addOpenTableFromAction}
+            onDeleteAction={deleteCustomerAction}
           />
         ) : (
           <StoreHome
@@ -1678,6 +2042,8 @@ function App() {
           tableChecks={tableChecks}
           receivables={visibleReceivables}
           receivablesEnabled={receivablesEnabled}
+          payrollAdjustments={payrollAdjustments}
+          onChangePayrollAdjustments={setPayrollAdjustments}
           currentBusinessDate={currentBusinessDate}
         />
       )}
@@ -1685,11 +2051,11 @@ function App() {
       {activeTab === "personal" && currentUser.role === "host" && (
         <PersonalView
           host={selectedHost}
-          monthExpenses={hostMonthExpenses}
+          expenses={expenses}
           receivables={visibleReceivables}
           receivablesEnabled={receivablesEnabled}
           tableChecks={tableChecks}
-          customerProfiles={customerProfiles}
+          currentBusinessDate={currentBusinessDate}
           bottles={bottles}
         />
       )}
@@ -1788,6 +2154,7 @@ function App() {
           hosts={displayHosts}
           expenses={expenses}
           draft={expenseDraft}
+          currentBusinessDate={currentBusinessDate}
           hostName={hostName}
           onChangeDraft={setExpenseDraft}
           onSave={saveExpense}
@@ -1804,6 +2171,7 @@ function App() {
           expenses={expenses}
           draft={expenseDraft}
           closes={registerCloses}
+          isLocked={isClosedDate(currentBusinessDate)}
           onChangeDraft={setExpenseDraft}
           onSaveExpense={() => saveExpense({ date: currentBusinessDate, ownerType: "store", hostId: undefined })}
           onEditExpense={openExpenseEdit}
@@ -1851,6 +2219,9 @@ function App() {
                 hosts={displayHosts}
                 selectedHostId={selectedHostId}
                 expenses={expenses}
+                receivables={visibleReceivables}
+                receivablesEnabled={receivablesEnabled}
+                payrollAdjustments={payrollAdjustments}
                 tableChecks={tableChecks}
                 currentBusinessDate={currentBusinessDate}
               />
@@ -1860,24 +2231,29 @@ function App() {
               settings={storeSettings}
               notice={notice}
               installHint={installHint}
+              deviceLog={deviceLog}
               operationLogs={operationLogs}
               hosts={displayHosts}
               tableChecks={tableChecks}
+              receivables={visibleReceivables}
+              currentBusinessDate={currentBusinessDate}
               customerProfiles={customerProfiles}
               bottles={bottles}
               customerActions={customerActions}
               hostName={hostName}
-              onUpdateCustomerProfile={updateCustomerProfile}
+              onSaveCustomerCaution={saveCustomerCaution}
               onAddBottle={addBottle}
               onUpdateBottle={updateBottle}
               onDeleteBottle={deleteBottle}
-              onAddCustomerAction={addCustomerAction}
-              onUpdateCustomerAction={updateCustomerAction}
               onDeleteCustomerAction={deleteCustomerAction}
+              onMoveCustomerActionToOpenTable={addOpenTableFromAction}
               onInstall={handleInstall}
               onLogout={handleLogout}
+              onExportBackup={exportBackup}
+              onImportBackup={importBackup}
               onUpdateSettings={setStoreSettings}
               onClearDevice={handleClearDevice}
+              onClearAllDeviceLog={handleClearAllDeviceLog}
               users={users}
               canManage={canManage}
               onUpdateUser={updateUser}
@@ -1891,24 +2267,29 @@ function App() {
             settings={storeSettings}
             notice={notice}
             installHint={installHint}
+            deviceLog={deviceLog}
             operationLogs={operationLogs}
             hosts={displayHosts}
             tableChecks={tableChecks}
+            receivables={visibleReceivables}
+            currentBusinessDate={currentBusinessDate}
             customerProfiles={customerProfiles}
             bottles={bottles}
             customerActions={customerActions}
             hostName={hostName}
-            onUpdateCustomerProfile={updateCustomerProfile}
+            onSaveCustomerCaution={saveCustomerCaution}
             onAddBottle={addBottle}
             onUpdateBottle={updateBottle}
             onDeleteBottle={deleteBottle}
-            onAddCustomerAction={addCustomerAction}
-            onUpdateCustomerAction={updateCustomerAction}
             onDeleteCustomerAction={deleteCustomerAction}
+            onMoveCustomerActionToOpenTable={addOpenTableFromAction}
             onInstall={handleInstall}
             onLogout={handleLogout}
+            onExportBackup={exportBackup}
+            onImportBackup={importBackup}
             onUpdateSettings={setStoreSettings}
             onClearDevice={handleClearDevice}
+            onClearAllDeviceLog={handleClearAllDeviceLog}
             users={users}
             canManage={canManage}
             onUpdateUser={updateUser}
@@ -2020,15 +2401,20 @@ function Metric({
   label,
   value,
   icon: Icon,
-  tone
+  tone,
+  className = ""
 }: {
   label: string;
   value: string;
   icon: React.ComponentType<{ size?: number }>;
   tone: "ink" | "green" | "orange" | "red";
+  className?: string;
 }) {
+  const numericLength = value.replace(/[^\d-]/g, "").length;
+  const valueSizeClass = numericLength >= 9 ? " metric-value-tight" : "";
+
   return (
-    <article className={`metric tone-${tone}`}>
+    <article className={`metric tone-${tone}${valueSizeClass} ${className}`.trim()}>
       <div className="metric-icon">
         <Icon size={20} />
       </div>
@@ -2087,7 +2473,9 @@ function HostHome({
   currentBusinessDate,
   onAddOpenTable,
   onUpdateOpenTable,
-  onCompleteAction
+  onAddAction,
+  onMoveActionToOpenTable,
+  onDeleteAction
 }: {
   host: Host;
   todaySales: number;
@@ -2096,13 +2484,44 @@ function HostHome({
   currentBusinessDate: string;
   onAddOpenTable: () => void;
   onUpdateOpenTable: (id: number, patch: Partial<OpenTable>) => void;
-  onCompleteAction: (id: number) => void;
+  onAddAction: (action: Partial<CustomerAction>) => void;
+  onMoveActionToOpenTable: (action: CustomerAction) => void;
+  onDeleteAction: (id: number) => void;
 }) {
   const openTotal = openTables.reduce((sum, table) => sum + table.currentAmount, 0);
   const [selectedAction, setSelectedAction] = React.useState<CustomerAction | null>(null);
+  const [showActionList, setShowActionList] = React.useState(false);
+  const [actionDraftOpen, setActionDraftOpen] = React.useState(false);
+  const [actionDraft, setActionDraft] = React.useState<CustomerAction>({
+    id: 0,
+    customer: "",
+    hostId: host.id,
+    date: currentBusinessDate,
+    time: currentTime(),
+    kind: "visit",
+    targetAmount: 0,
+    status: "todo",
+    memo: ""
+  });
   const todayActions = customerActions
     .filter((action) => action.hostId === host.id && action.date === currentBusinessDate && action.status !== "done")
     .sort((a, b) => a.time.localeCompare(b.time));
+  const visibleActions = todayActions.slice(0, 3);
+  const hiddenActionCount = Math.max(0, todayActions.length - visibleActions.length);
+  const openActionDraft = () => {
+    setActionDraft({
+      id: 0,
+      customer: "",
+      hostId: host.id,
+      date: currentBusinessDate,
+      time: currentTime(),
+      kind: "visit",
+      targetAmount: 0,
+      status: "todo",
+      memo: ""
+    });
+    setActionDraftOpen(true);
+  };
 
   return (
     <section className="home-stack">
@@ -2110,36 +2529,45 @@ function HostHome({
         <div className="panel-header">
           <div>
             <p className="eyebrow">日次</p>
-            <h3>{host.name}</h3>
           </div>
         </div>
-        <div className="detail-metrics compact-metrics">
-          <Metric label="当日売上" value={money(todaySales)} icon={ReceiptText} tone="green" />
-          <Metric label="未会計現状" value={money(openTotal)} icon={ClipboardList} tone="orange" />
+        <div className="detail-metrics compact-metrics host-home-metrics">
+          <Metric label="当日会計済" value={money(todaySales)} icon={ReceiptText} tone="green" />
+          <Metric label="未会計合計" value={money(openTotal)} icon={ClipboardList} tone="orange" />
         </div>
       </article>
 
-      {todayActions.length > 0 && (
-        <article className="panel wide">
-          <div className="panel-header compact-header">
-            <div>
-              <p className="eyebrow">予定</p>
-              <h3>今日の対応</h3>
-            </div>
+      <article className="panel wide">
+        <div className="panel-header compact-header">
+          <div className="host-home-title-line">
+            <h3>来店予定</h3>
             <span className="status-pill status-ok">{todayActions.length}件</span>
           </div>
-          <div className="host-action-list">
-            {todayActions.map((action) => (
+          <button className="icon-text-button ghost-button host-action-more-button" type="button" onClick={openActionDraft}>
+            <Plus size={14} />
+            追加
+          </button>
+        </div>
+        <div className="host-action-list">
+          {visibleActions.length === 0 ? (
+            <div className="host-action-empty">来店予定なし</div>
+          ) : (
+            visibleActions.map((action) => (
               <button className="host-action-row selectable-row" type="button" key={action.id} onClick={() => setSelectedAction(action)}>
                 <span>{action.time}</span>
                 <small>{customerActionKindLabel[action.kind]}</small>
                 <b>{action.customer}</b>
                 <em>{action.targetAmount > 0 ? money(action.targetAmount) : "目標なし"}</em>
               </button>
-            ))}
-          </div>
-        </article>
-      )}
+            ))
+          )}
+          {hiddenActionCount > 0 && (
+            <button className="host-action-more selectable-row" type="button" onClick={() => setShowActionList(true)}>
+              残り{hiddenActionCount}件を表示
+            </button>
+          )}
+        </div>
+      </article>
 
       <article className="panel wide">
         <OpenTablesPanel
@@ -2161,30 +2589,175 @@ function HostHome({
         <CustomerActionDetailModal
           action={selectedAction}
           hostName={() => host.name}
-          onComplete={() => {
-            onCompleteAction(selectedAction.id);
+          compactHostView
+          onMoveToOpenTable={() => {
+            onMoveActionToOpenTable(selectedAction);
+            setSelectedAction(null);
+          }}
+          onDelete={() => {
+            onDeleteAction(selectedAction.id);
             setSelectedAction(null);
           }}
           onClose={() => setSelectedAction(null)}
+        />
+      )}
+
+      {showActionList && (
+        <CustomerActionListModal
+          actions={todayActions}
+          onSelect={(action) => {
+            setSelectedAction(action);
+            setShowActionList(false);
+          }}
+          onClose={() => setShowActionList(false)}
+        />
+      )}
+
+      {actionDraftOpen && (
+        <CustomerActionDraftModal
+          draft={actionDraft}
+          onChange={setActionDraft}
+          onSave={() => {
+            onAddAction(actionDraft);
+            setActionDraftOpen(false);
+          }}
+          onClose={() => setActionDraftOpen(false)}
         />
       )}
     </section>
   );
 }
 
+function CustomerActionDraftModal({
+  draft,
+  onChange,
+  onSave,
+  onClose
+}: {
+  draft: CustomerAction;
+  onChange: (draft: CustomerAction) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="来店予定追加">
+      <article className="panel checkout-modal action-detail-modal">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">来店予定</p>
+            <h3>追加</h3>
+          </div>
+          <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+        <div className="form-grid">
+          <TextField label="客名" value={draft.customer} onChange={(customer) => onChange({ ...draft, customer })} />
+          <TimeSelectField label="時間" value={draft.time} onChange={(time) => onChange({ ...draft, time })} />
+          <SelectField
+            label="種別"
+            value={draft.kind}
+            options={customerActionKindOptions}
+            onChange={(kind) => onChange({ ...draft, kind: kind as CustomerActionKind })}
+          />
+          <NumberField label="目標" value={draft.targetAmount} min={0} step={1000} onChange={(targetAmount) => onChange({ ...draft, targetAmount })} />
+          <TextField label="メモ" value={draft.memo} onChange={(memo) => onChange({ ...draft, memo })} />
+        </div>
+        <div className="modal-actions">
+          <button className="install-button" type="button" onClick={onSave}>
+            <Save size={16} />
+            保存
+          </button>
+          <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function CustomerActionListModal({
+  actions,
+  onSelect,
+  onClose
+}: {
+  actions: CustomerAction[];
+  onSelect: (action: CustomerAction) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleActions = normalizedSearch
+    ? actions.filter((action) => {
+        const searchableText = `${action.time} ${action.customer} ${customerActionKindLabel[action.kind]} ${action.targetAmount} ${action.memo}`.toLowerCase();
+        return searchableText.includes(normalizedSearch);
+      })
+    : actions;
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="来店予定一覧">
+      <article className="panel checkout-modal action-list-modal">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">来店予定</p>
+            <h3>来店予定 {actions.length}件</h3>
+          </div>
+          <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+        <label className="search-shell action-modal-search">
+          <span>検索</span>
+          <input
+            type="search"
+            value={search}
+            placeholder="客名・時間・金額"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <div className="host-action-modal-list">
+          {visibleActions.length === 0 ? (
+            <div className="plain-note">
+              <CheckCircle2 size={18} />
+              <div>
+                <strong>該当なし</strong>
+                <p>検索条件を変えると表示されます。</p>
+              </div>
+            </div>
+          ) : (
+            visibleActions.map((action) => (
+              <button className="host-action-row selectable-row" type="button" key={action.id} onClick={() => onSelect(action)}>
+                <span>{action.time}</span>
+                <small>{customerActionKindLabel[action.kind]}</small>
+                <b>{action.customer}</b>
+                <em>{action.targetAmount > 0 ? money(action.targetAmount) : "目標なし"}</em>
+              </button>
+            ))
+          )}
+        </div>
+      </article>
+    </div>
+  );
+}
+
 function CustomerActionDetailModal({
   action,
   hostName,
-  onComplete,
+  compactHostView = false,
+  onMoveToOpenTable,
+  onDelete,
   onClose
 }: {
   action: CustomerAction;
   hostName: (hostId?: number) => string;
-  onComplete?: () => void;
+  compactHostView?: boolean;
+  onMoveToOpenTable?: () => void;
+  onDelete?: () => void;
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="予定詳細">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="来店予定詳細">
       <article className="panel checkout-modal action-detail-modal">
         <div className="panel-header">
           <div>
@@ -2196,17 +2769,23 @@ function CustomerActionDetailModal({
           </button>
         </div>
         <div className="result-lines">
-          <div><span>担当</span><b>{hostName(action.hostId)}</b></div>
-          <div><span>日時</span><b>{action.date} {action.time}</b></div>
+          {!compactHostView && <div><span>担当</span><b>{hostName(action.hostId)}</b></div>}
+          <div><span>{compactHostView ? "時間" : "日時"}</span><b>{compactHostView ? action.time : `${action.date} ${action.time}`}</b></div>
           <div><span>目標</span><b>{action.targetAmount > 0 ? yenMoney(action.targetAmount) : "なし"}</b></div>
           <div><span>状態</span><b>{customerActionStatusLabel[action.status]}</b></div>
         </div>
         {action.memo && <p className="tax-note">{action.memo}</p>}
         <div className="modal-actions">
-          {onComplete && action.status !== "done" && (
-            <button className="install-button" type="button" onClick={onComplete}>
-              <CheckCircle2 size={16} />
-              完了
+          {onMoveToOpenTable && (
+            <button className="install-button" type="button" onClick={onMoveToOpenTable}>
+              <Plus size={16} />
+              未会計の卓に追加
+            </button>
+          )}
+          {onDelete && (
+            <button className="icon-text-button ghost-button danger-button" type="button" onClick={onDelete}>
+              <Trash2 size={16} />
+              削除
             </button>
           )}
           <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
@@ -2256,7 +2835,6 @@ function HostDailyView({
         <div className="panel-header">
           <div>
             <p className="eyebrow">日次</p>
-            <h3>{host.name}</h3>
           </div>
           <div className="month-select-wrap host-daily-date">
             <SelectField
@@ -2343,8 +2921,8 @@ function SummaryView({
       ...expenses.filter((expense) => expense.ownerType === "store").map((expense) => expense.date.slice(0, 7)),
       ...receivables.map((item) =>
         item.sourceCheckId
-          ? dateByCheckId.get(item.sourceCheckId)?.slice(0, 7) ?? ""
-          : dateFromShortDue(item.due, currentBusinessDate.slice(0, 4)).slice(0, 7)
+          ? (dateByCheckId.get(item.sourceCheckId) ?? item.date).slice(0, 7)
+          : (item.date || dateFromShortDue(item.due, currentBusinessDate.slice(0, 4))).slice(0, 7)
       )
     ]));
     return months
@@ -2359,7 +2937,7 @@ function SummaryView({
   const monthChecks = tableChecks.filter((check) => check.date.startsWith(selectedMonth));
   const checkDateById = new Map(tableChecks.map((check) => [check.id, check.date]));
   const receivableDate = (item: Receivable, fallbackYear: string) =>
-    item.sourceCheckId ? checkDateById.get(item.sourceCheckId) ?? "" : dateFromShortDue(item.due, fallbackYear);
+    receivableBusinessDate(item, checkDateById, fallbackYear);
   const monthSales = monthChecks.reduce((sum, check) => sum + tableTotal(check), 0);
   const monthPaid = monthChecks.reduce((sum, check) => sum + check.cashAmount + check.cardAmount, 0);
   const monthOpenReceivables = receivables.filter((item) => receivableDate(item, selectedMonth.slice(0, 4)).startsWith(selectedMonth));
@@ -2624,6 +3202,8 @@ function PayrollView({
   tableChecks,
   receivables,
   receivablesEnabled,
+  payrollAdjustments,
+  onChangePayrollAdjustments,
   currentBusinessDate
 }: {
   hosts: Host[];
@@ -2631,19 +3211,10 @@ function PayrollView({
   tableChecks: TableCheck[];
   receivables: Receivable[];
   receivablesEnabled: boolean;
+  payrollAdjustments: Record<number, PayrollAdjustment>;
+  onChangePayrollAdjustments: React.Dispatch<React.SetStateAction<Record<number, PayrollAdjustment>>>;
   currentBusinessDate: string;
 }) {
-  type PayrollItem = {
-    id: number;
-    label: string;
-    amount: number;
-  };
-  type PayrollAdjustment = {
-    rate?: number;
-    additions: PayrollItem[];
-    deductions: PayrollItem[];
-  };
-  const blankPayrollAdjustment = (): PayrollAdjustment => ({ additions: [], deductions: [] });
   const monthOptions = React.useMemo(() => {
     const months = Array.from(new Set([currentBusinessDate.slice(0, 7), ...tableChecks.map((check) => check.date.slice(0, 7))]));
     return months
@@ -2656,8 +3227,8 @@ function PayrollView({
   }, [currentBusinessDate, tableChecks]);
   const [selectedMonth, setSelectedMonth] = React.useState(currentBusinessDate.slice(0, 7));
   const [editingHostId, setEditingHostId] = React.useState<number | null>(null);
-  const [payrollAdjustments, setPayrollAdjustments] = React.useState<Record<number, PayrollAdjustment>>({});
   const monthChecks = tableChecks.filter((check) => check.date.startsWith(selectedMonth));
+  const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
   const baseAmount = (check: TableCheck) => (settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check));
   const withholdingTaxRate = settings.withholdingTaxRate ?? 0;
   const withholdingEnabled = withholdingTaxRate > 0;
@@ -2670,7 +3241,11 @@ function PayrollView({
     const additionsTotal = adjustment.additions.reduce((sum, item) => sum + item.amount, 0);
     const manualDeductionsTotal = adjustment.deductions.reduce((sum, item) => sum + item.amount, 0);
     const payrollDeduction = receivablesEnabled ? receivables
-      .filter((item) => item.hostId === host.id && item.collection === "payrollDeducted")
+      .filter((item) =>
+        item.hostId === host.id &&
+        item.collection === "payrollDeducted" &&
+        receivableBusinessDate(item, checkDateById, selectedMonth.slice(0, 4)).startsWith(selectedMonth)
+      )
       .reduce((sum, item) => sum + item.amount, 0) : 0;
     const uncollectedReceivable = receivablesEnabled ? receivables
       .filter((item) => item.hostId === host.id)
@@ -2679,7 +3254,16 @@ function PayrollView({
     const withholdingTax = withholdingEnabled ? Math.round(supplyTotal * (withholdingTaxRate / 100)) : 0;
     const deductionTotal = manualDeductionsTotal + payrollDeduction + withholdingTax;
     const payable = supplyTotal - deductionTotal;
-    return { host, base, rate, salaryBase, adjustment, additionsTotal, payrollDeduction, manualDeductionsTotal, withholdingTax, deductionTotal, supplyTotal, uncollectedReceivable, payable };
+    const supplyItems: PayrollItem[] = [
+      { id: -1, label: `歩合支給 ${rate}%`, amount: salaryBase },
+      ...adjustment.additions
+    ];
+    const deductionItems: PayrollItem[] = [
+      ...adjustment.deductions,
+      ...(payrollDeduction > 0 ? [{ id: -2, label: "給与控除売掛", amount: payrollDeduction }] : []),
+      ...(withholdingTax > 0 ? [{ id: -3, label: "源泉所得税", amount: withholdingTax }] : [])
+    ];
+    return { host, base, rate, salaryBase, adjustment, additionsTotal, payrollDeduction, manualDeductionsTotal, withholdingTax, deductionTotal, supplyTotal, supplyItems, deductionItems, uncollectedReceivable, payable };
   });
   const totals = payrollRows.reduce(
     (acc, row) => ({
@@ -2690,29 +3274,72 @@ function PayrollView({
   );
   const editingRow = payrollRows.find((row) => row.host.id === editingHostId);
   const updatePayrollAdjustment = (hostId: number, patch: Partial<PayrollAdjustment>) => {
-    setPayrollAdjustments((current) => {
+    onChangePayrollAdjustments((current) => {
       const base = current[hostId] ?? blankPayrollAdjustment();
       return { ...current, [hostId]: { ...base, ...patch } };
     });
   };
   const addPayrollItem = (hostId: number, type: "additions" | "deductions") => {
     const label = type === "additions" ? "支給項目" : "控除項目";
-    setPayrollAdjustments((current) => {
+    onChangePayrollAdjustments((current) => {
       const base = current[hostId] ?? blankPayrollAdjustment();
       return { ...current, [hostId]: { ...base, [type]: [...base[type], { id: Date.now(), label, amount: 0 }] } };
     });
   };
   const updatePayrollItem = (hostId: number, type: "additions" | "deductions", itemId: number, patch: Partial<PayrollItem>) => {
-    setPayrollAdjustments((current) => {
+    onChangePayrollAdjustments((current) => {
       const base = current[hostId] ?? blankPayrollAdjustment();
       return { ...current, [hostId]: { ...base, [type]: base[type].map((item) => (item.id === itemId ? { ...item, ...patch } : item)) } };
     });
   };
   const deletePayrollItem = (hostId: number, type: "additions" | "deductions", itemId: number) => {
-    setPayrollAdjustments((current) => {
+    onChangePayrollAdjustments((current) => {
       const base = current[hostId] ?? blankPayrollAdjustment();
       return { ...current, [hostId]: { ...base, [type]: base[type].filter((item) => item.id !== itemId) } };
     });
+  };
+  const exportPayrollCsv = () => {
+    const header = ["月", "ホスト", "売上", "歩合率", "歩合支給", "追加支給", "支給合計", "給与控除売掛", "手動控除", "源泉所得税", "控除合計", "支給額", "未回収売掛"];
+    const rows = payrollRows.map((row) => [
+      selectedMonth,
+      row.host.name,
+      row.base,
+      `${row.rate}%`,
+      row.salaryBase,
+      row.additionsTotal,
+      row.supplyTotal,
+      row.payrollDeduction,
+      row.manualDeductionsTotal,
+      row.withholdingTax,
+      row.deductionTotal,
+      row.payable,
+      row.uncollectedReceivable
+    ]);
+    downloadCsv(header, rows, `payroll-${selectedMonth}.csv`);
+  };
+  const printPayrollStatement = (row: typeof payrollRows[number]) => {
+    const supplyRows = row.supplyItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">${yenMoney(item.amount)}</td></tr>`).join("");
+    const deductionRows = row.deductionItems.length > 0
+      ? row.deductionItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">-${yenMoney(item.amount)}</td></tr>`).join("")
+      : `<tr><td>控除なし</td><td class="amount">${yenMoney(0)}</td></tr>`;
+    printDocument(
+      `${selectedMonth} ${row.host.name} 給与明細`,
+      `<h1>${htmlEscape(selectedMonth)} 給与明細</h1>
+       <p>${htmlEscape(row.host.name)}</p>
+       <div class="summary">
+        <div class="box"><span>売上</span><b>${yenMoney(row.base)}</b></div>
+        <div class="box"><span>支給合計</span><b>${yenMoney(row.supplyTotal)}</b></div>
+        <div class="box"><span>支給額</span><b>${yenMoney(row.payable)}</b></div>
+       </div>
+       <h2>支給</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${supplyRows}</tbody></table>
+       <h2>控除</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${deductionRows}</tbody></table>
+       <h2>内訳</h2><table><tbody>
+        <tr><th>計算元</th><td>${settings.payrollBase === "subtotal" ? "小計" : "総計"}</td></tr>
+        <tr><th>歩合率</th><td>${row.rate}%</td></tr>
+        <tr><th>未回収売掛</th><td>${yenMoney(row.uncollectedReceivable)}</td></tr>
+        <tr><th>控除合計</th><td>-${yenMoney(row.deductionTotal)}</td></tr>
+       </tbody></table>`
+    );
   };
 
   return (
@@ -2730,6 +3357,10 @@ function PayrollView({
               options={monthOptions}
               onChange={setSelectedMonth}
             />
+            <button className="icon-text-button ghost-button" type="button" onClick={exportPayrollCsv}>
+              <Download size={14} />
+              給与CSV
+            </button>
           </div>
         </div>
         <div className="quick-numbers summary-metrics">
@@ -2876,9 +3507,15 @@ function PayrollView({
               <div><span>控除合計</span><b>-{yenMoney(editingRow.deductionTotal)}</b></div>
               <div><span>支給額</span><b>{yenMoney(editingRow.payable)}</b></div>
             </div>
-            <button className="install-button full-button" type="button" onClick={() => setEditingHostId(null)}>
-              閉じる
-            </button>
+            <div className="button-row full-button-row">
+              <button className="install-button" type="button" onClick={() => printPayrollStatement(editingRow)}>
+                <FileText size={16} />
+                明細PDF
+              </button>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setEditingHostId(null)}>
+                閉じる
+              </button>
+            </div>
           </article>
         </div>
       )}
@@ -2888,23 +3525,24 @@ function PayrollView({
 
 function PersonalView({
   host,
-  monthExpenses,
+  expenses,
   receivables,
   receivablesEnabled,
   tableChecks,
-  customerProfiles,
+  currentBusinessDate,
   bottles
 }: {
   host: Host;
-  monthExpenses: number;
+  expenses: Expense[];
   receivables: Receivable[];
   receivablesEnabled: boolean;
   tableChecks: TableCheck[];
-  customerProfiles: CustomerProfile[];
+  currentBusinessDate: string;
   bottles: BottleKeep[];
 }) {
   const monthOptions = React.useMemo(() => {
-    const base = new Date(2026, 5, 1);
+    const [baseYear, baseMonth] = currentBusinessDate.split("-").map(Number);
+    const base = new Date(baseYear, (baseMonth || 1) - 1, 1);
     return Array.from({ length: 13 }, (_, index) => {
       const date = new Date(base);
       date.setMonth(base.getMonth() - index);
@@ -2912,22 +3550,30 @@ function PersonalView({
       const label = `${date.getFullYear()}年${date.getMonth() + 1}月`;
       return { label, value, index };
     });
-  }, []);
-  const [selectedMonth, setSelectedMonth] = React.useState(monthOptions[0].value);
+  }, [currentBusinessDate]);
+  const [selectedMonth, setSelectedMonth] = React.useState(currentBusinessDate.slice(0, 7));
+  React.useEffect(() => {
+    setSelectedMonth(currentBusinessDate.slice(0, 7));
+  }, [currentBusinessDate]);
   const [customerSearch, setCustomerSearch] = React.useState("");
   const [selectedCustomer, setSelectedCustomer] = React.useState<string | null>(null);
-  const selectedIndex = monthOptions.find((month) => month.value === selectedMonth)?.index ?? 0;
+  const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
   const hostChecks = tableChecks.filter((check) => check.hostId === host.id && check.date.startsWith(selectedMonth));
-  const currentMonthSales = hostChecks.reduce((sum, check) => sum + tableTotal(check), 0);
-  const monthSales = selectedIndex === 0 ? currentMonthSales : Math.max(0, Math.round(host.sales * (1 - selectedIndex * 0.035)));
-  const displayedExpenses = Math.max(0, Math.round(monthExpenses * (1 - selectedIndex * 0.025)));
+  const monthSales = hostChecks.reduce((sum, check) => sum + tableTotal(check), 0);
+  const displayedExpenses = expenses
+    .filter((expense) => expense.ownerType === "host" && expense.hostId === host.id && expense.date.startsWith(selectedMonth))
+    .reduce((sum, expense) => sum + expense.amount, 0);
   const activeReceivable = receivablesEnabled ? receivables
     .filter((item) => item.hostId === host.id && item.collection !== "payrollDeducted")
     .reduce((sum, item) => sum + item.amount, 0) : 0;
   const payrollDeductedReceivable = receivablesEnabled ? receivables
-    .filter((item) => item.hostId === host.id && item.collection === "payrollDeducted")
+    .filter((item) =>
+      item.hostId === host.id &&
+      item.collection === "payrollDeducted" &&
+      receivableBusinessDate(item, checkDateById, selectedMonth.slice(0, 4)).startsWith(selectedMonth)
+    )
     .reduce((sum, item) => sum + item.amount, 0) : 0;
-  const takeHome = Math.round(monthSales * 0.48 - displayedExpenses - host.taxReserve - payrollDeductedReceivable);
+  const payrollEstimate = Math.round(monthSales * 0.48 - payrollDeductedReceivable);
   const targetRate = host.target > 0 ? Math.round((monthSales / host.target) * 100) : 0;
   const normalizedCustomerSearch = customerSearch.trim().toLowerCase();
   const customerSales = Object.values(
@@ -2945,9 +3591,6 @@ function PersonalView({
     ? hostChecks.filter((check) => check.customerName === selectedCustomer).sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
     : [];
   const selectedCustomerTotal = selectedCustomerChecks.reduce((sum, check) => sum + tableTotal(check), 0);
-  const selectedCustomerProfile = selectedCustomer
-    ? customerProfiles.find((profile) => profile.customer === selectedCustomer && profile.hostId === host.id)
-    : undefined;
   const selectedCustomerBottles = selectedCustomer
     ? bottles.filter((bottle) => bottle.customer === selectedCustomer && bottle.hostId === host.id)
     : [];
@@ -2972,7 +3615,7 @@ function PersonalView({
         <div className="detail-metrics">
           <Metric label="月間売上" value={money(monthSales)} icon={BarChart3} tone="ink" />
           <Metric label="月間経費" value={money(displayedExpenses)} icon={ReceiptText} tone="orange" />
-          <Metric label="手取り目安" value={money(Math.max(0, takeHome))} icon={WalletCards} tone="green" />
+          <Metric label="給与目安" value={money(Math.max(0, payrollEstimate))} icon={WalletCards} tone="green" />
           {receivablesEnabled && <Metric label="通常売掛" value={money(activeReceivable)} icon={AlertTriangle} tone="orange" />}
           {receivablesEnabled && <Metric label="給与控除売掛" value={money(payrollDeductedReceivable)} icon={WalletCards} tone="red" />}
         </div>
@@ -3004,10 +3647,8 @@ function PersonalView({
           ) : (
             customerSales.map((item) => (
               <button className="customer-sales-row selectable-row" type="button" key={item.customer} onClick={() => setSelectedCustomer(item.customer)}>
-                <div>
-                  <strong>{item.customer}</strong>
-                  <p>{item.count}件</p>
-                </div>
+                <strong>{item.customer}</strong>
+                <span>{item.count}件</span>
                 <b>{money(item.total)}</b>
               </button>
             ))
@@ -3022,7 +3663,6 @@ function PersonalView({
           total={selectedCustomerTotal}
           hostName={() => host.name}
           receivablesEnabled={receivablesEnabled}
-          profile={selectedCustomerProfile}
           bottles={selectedCustomerBottles}
           onClose={() => setSelectedCustomer(null)}
         />
@@ -3069,17 +3709,13 @@ function CustomerDetailModal({
           <Metric label="来店回数" value={`${checks.length}件`} icon={ReceiptText} tone="green" />
           <Metric label="平均単価" value={yenMoney(average)} icon={Coins} tone="orange" />
         </div>
-        {(profile || bottles.length > 0) && (
+        {((profile?.caution) || bottles.length > 0) && (
           <div className="customer-card-grid">
-            {profile && (
+            {profile?.caution && (
               <section className="customer-card-box">
-                <p className="eyebrow">カルテ</p>
+                <p className="eyebrow">注意</p>
                 <div className="customer-card-lines">
-                  <span>誕生日 {profile.birthday || "未設定"}</span>
-                  <span>好み {profile.favoriteDrink || "未設定"}</span>
-                  <span>連絡 {profile.lastContact || "未設定"}</span>
-                  <p>{profile.visitNote || "来店メモなし"}</p>
-                  {profile.caution && <small>{profile.caution}</small>}
+                  <p>{profile.caution}</p>
                 </div>
               </section>
             )}
@@ -3090,8 +3726,7 @@ function CustomerDetailModal({
                   {bottles.map((bottle) => (
                     <div className="customer-bottle-mini" key={bottle.id}>
                       <span>{bottle.bottleName}</span>
-                      <b>{bottle.remaining}%</b>
-                      <small>{bottle.expiresAt}</small>
+                      {bottle.memo && <small>{bottle.memo}</small>}
                     </div>
                   ))}
                 </div>
@@ -3218,6 +3853,10 @@ function CheckoutView({
           <div className="button-row">
             <span className="status-pill status-warn">営業日 {businessDate}</span>
             <span className="status-pill status-ok">本日 {money(todayTotal)}</span>
+            <button className="icon-text-button ghost-button" type="button" onClick={() => downloadChecksCsv(tableChecks, hosts, receivablesEnabled, `checks-${businessDate}.csv`)}>
+              <Download size={14} />
+              会計CSV
+            </button>
             <button className="icon-text-button" type="button" onClick={onOpenNew}>
               <Plus size={16} />
               新規会計
@@ -3503,7 +4142,7 @@ function OpenTablesPanel({
   return (
     <>
       <div className="panel-header compact-header">
-        <div>
+        <div className="open-table-title-line">
           <p className="eyebrow">営業中</p>
           <h3>{title}</h3>
         </div>
@@ -3989,6 +4628,7 @@ function ClosingView({
   expenses,
   draft,
   closes,
+  isLocked,
   onChangeDraft,
   onSaveExpense,
   onEditExpense,
@@ -4001,6 +4641,7 @@ function ClosingView({
   expenses: Expense[];
   draft: Expense;
   closes: RegisterClose[];
+  isLocked: boolean;
   onChangeDraft: (value: Expense) => void;
   onSaveExpense: () => void;
   onEditExpense: (expense: Expense) => void;
@@ -4028,6 +4669,30 @@ function ClosingView({
   const difference = actualCash - expectedCash;
   const searchedCloses = closes.filter((item) => item.date === closeSearchDate);
   const storeExpenseTotal = storeExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const printClosingSheet = () => {
+    const expenseRows = storeExpenses.length > 0
+      ? storeExpenses.map((item) => `<tr><td>${htmlEscape(item.category)}</td><td>${htmlEscape(item.vendor || "支払先未入力")}</td><td>${htmlEscape(item.paymentMethod)}</td><td class="amount">${yenMoney(item.amount)}</td></tr>`).join("")
+      : `<tr><td colspan="4">当日経費なし</td></tr>`;
+    printDocument(
+      `${businessDate} レジ締め`,
+      `<h1>${businessDate} レジ締め</h1>
+       <div class="summary">
+        <div class="box"><span>総会計</span><b>${yenMoney(totalSales)}</b></div>
+        <div class="box"><span>現金売上</span><b>${yenMoney(cashSales)}</b></div>
+        <div class="box"><span>差額</span><b>${yenMoney(difference)}</b></div>
+       </div>
+       <table><tbody>
+        <tr><th>開始レジ金</th><td class="amount">${yenMoney(startCash)}</td></tr>
+        <tr><th>途中入金</th><td class="amount">${yenMoney(cashInjection)}</td></tr>
+        <tr><th>カード売上</th><td class="amount">${yenMoney(cardSales)}</td></tr>
+        <tr><th>売掛</th><td class="amount">${yenMoney(receivableSales)}</td></tr>
+        <tr><th>現金経費</th><td class="amount">-${yenMoney(cashExpenses)}</td></tr>
+        <tr><th>予想現金</th><td class="amount">${yenMoney(expectedCash)}</td></tr>
+        <tr><th>実残現金</th><td class="amount">${yenMoney(actualCash)}</td></tr>
+       </tbody></table>
+       <h2>当日経費</h2><table><thead><tr><th>科目</th><th>支払先</th><th>支払</th><th>金額</th></tr></thead><tbody>${expenseRows}</tbody></table>`
+    );
+  };
 
   React.useEffect(() => {
     setStartCash(carriedCash);
@@ -4051,7 +4716,7 @@ function ClosingView({
             <p className="eyebrow">締め入力</p>
             <h3>実残チェック</h3>
           </div>
-          <CheckCircle2 size={22} />
+          {isLocked ? <span className="status-pill status-ok">締め済み</span> : <CheckCircle2 size={22} />}
         </div>
         <div className="form-grid">
           <NumberField label="スタートレジ金" value={startCash} min={0} step={1000} onChange={setStartCash} />
@@ -4074,9 +4739,10 @@ function ClosingView({
             onSave(actualCash, expectedCash, startCash, cashInjection, memo);
             setMemo("");
           }}
+          disabled={isLocked}
         >
           <Save size={18} />
-          レジ締め保存
+          {isLocked ? "締め済み" : "レジ締め保存"}
         </button>
       </article>
 
@@ -4086,7 +4752,17 @@ function ClosingView({
             <p className="eyebrow">レジ締め</p>
             <h3>{businessDate}</h3>
           </div>
-          <span className={difference === 0 ? "status-pill status-ok" : "status-pill status-danger"}>差額 {money(difference)}</span>
+          <div className="panel-header-actions">
+            <button className="icon-text-button ghost-button" type="button" onClick={() => downloadClosesCsv(closes, `register-closes.csv`)}>
+              <Download size={14} />
+              締めCSV
+            </button>
+            <button className="icon-text-button ghost-button" type="button" onClick={printClosingSheet}>
+              <FileText size={14} />
+              締めPDF
+            </button>
+            <span className={difference === 0 ? "status-pill status-ok" : "status-pill status-danger"}>差額 {money(difference)}</span>
+          </div>
         </div>
         <div className="quick-numbers summary-metrics">
           <Metric label="総会計" value={yenMoney(totalSales)} icon={ReceiptText} tone="ink" />
@@ -4206,24 +4882,26 @@ function ExpenseEditor({
 
 function ExpenseEditorModal({
   draft,
+  title = "経費編集",
   onChangeDraft,
   onClose,
   onSave,
   onDelete
 }: {
   draft: Expense;
+  title?: string;
   onChangeDraft: (value: Expense) => void;
   onClose: () => void;
   onSave: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="経費編集">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
       <article className="panel checkout-modal expense-edit-modal">
         <div className="panel-header">
           <div>
             <p className="eyebrow">経費</p>
-            <h3>経費編集</h3>
+            <h3>{title}</h3>
           </div>
           <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
             閉じる
@@ -4231,10 +4909,16 @@ function ExpenseEditorModal({
         </div>
         <ExpenseFormFields draft={draft} onChangeDraft={onChangeDraft} />
         <div className="button-row expense-edit-actions">
-          <button className="icon-text-button ghost-button danger-button" type="button" onClick={onDelete}>
-            <Trash2 size={16} />
-            削除
-          </button>
+          {onDelete ? (
+            <button className="icon-text-button ghost-button danger-button" type="button" onClick={onDelete}>
+              <Trash2 size={16} />
+              削除
+            </button>
+          ) : (
+            <button className="icon-text-button ghost-button" type="button" onClick={onClose}>
+              閉じる
+            </button>
+          )}
           <button className="install-button" type="button" onClick={onSave}>
             <Save size={18} />
             保存
@@ -4257,7 +4941,7 @@ function ExpenseFormFields({
   return (
     <div className="form-grid">
       {!fixedDate && (
-        <TextField label="日付" value={draft.date} onChange={(date) => onChangeDraft({ ...draft, date })} />
+        <DateSelectField label="日付" value={draft.date} onChange={(date) => onChangeDraft({ ...draft, date })} />
       )}
       <SelectField
         label="勘定科目"
@@ -4294,13 +4978,15 @@ function ExpenseListPanel({
   compactDetails = false,
   iconSize = 16,
   actionLabel,
+  actionIcon: ActionIcon = Download,
+  headerControl,
   onAction,
   onEdit,
   onDelete,
   emptyTitle,
   emptyBody
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   expenses: Expense[];
   hostName: (hostId?: number) => string;
@@ -4309,6 +4995,8 @@ function ExpenseListPanel({
   compactDetails?: boolean;
   iconSize?: number;
   actionLabel?: string;
+  actionIcon?: React.ComponentType<{ size?: number }>;
+  headerControl?: React.ReactNode;
   onAction?: () => void;
   onEdit?: (expense: Expense) => void;
   onDelete: (id: number) => void;
@@ -4319,16 +5007,17 @@ function ExpenseListPanel({
     <article className="panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">{eyebrow}</p>
+          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
           <h3>{title}</h3>
         </div>
         <div className="panel-header-actions">
           {actionLabel && onAction && (
             <button className="icon-text-button ghost-button" type="button" onClick={onAction}>
-              <Download size={14} />
+              <ActionIcon size={14} />
               {actionLabel}
             </button>
           )}
+          {headerControl}
           <FileText size={iconSize} />
         </div>
       </div>
@@ -4602,6 +5291,7 @@ function ExpensesView({
   hosts,
   expenses,
   draft,
+  currentBusinessDate,
   hostName,
   onChangeDraft,
   onSave,
@@ -4612,40 +5302,79 @@ function ExpensesView({
   hosts: Host[];
   expenses: Expense[];
   draft: Expense;
+  currentBusinessDate: string;
   hostName: (hostId?: number) => string;
   onChangeDraft: (value: Expense) => void;
   onSave: () => void;
   onEdit: (expense: Expense) => void;
   onDelete: (id: number) => void;
 }) {
+  const [createOpen, setCreateOpen] = React.useState(false);
   const visibleExpenses =
     currentUser.role === "host"
       ? expenses.filter((item) => item.ownerType === "host" && item.hostId === currentUser.hostId)
       : expenses.filter((item) => item.ownerType === "store");
-  const total = visibleExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const monthOptions = React.useMemo(() => {
+    const months = Array.from(new Set([
+      currentBusinessDate.slice(0, 7),
+      ...visibleExpenses.map((item) => item.date.slice(0, 7))
+    ]));
+    return months
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))
+      .map((value) => {
+        const [year, month] = value.split("-");
+        return { value, label: `${year}年${Number(month)}月` };
+      });
+  }, [currentBusinessDate, visibleExpenses]);
+  const [selectedMonth, setSelectedMonth] = React.useState(currentBusinessDate.slice(0, 7));
+  const monthExpenses = visibleExpenses.filter((item) => item.date.startsWith(selectedMonth));
+  const total = monthExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const ownerType = currentUser.role === "host" ? "host" : "store";
+  const openCreateExpense = () => {
+    onChangeDraft({ ...blankExpense(currentUser.hostId ?? hosts[0]?.id ?? 0, ownerType), date: currentBusinessDate });
+    setCreateOpen(true);
+  };
+  const closeCreateExpense = () => {
+    onChangeDraft({ ...blankExpense(currentUser.hostId ?? hosts[0]?.id ?? 0, ownerType), date: currentBusinessDate });
+    setCreateOpen(false);
+  };
+  const saveCreateExpense = () => {
+    onSave();
+    setCreateOpen(false);
+  };
 
   return (
-    <section className="split-layout">
-      <ExpenseEditor
-        title={currentUser.role === "host" ? "自分の経費" : "店舗経費"}
-        subtitle="経費入力"
-        draft={draft}
-        onChangeDraft={onChangeDraft}
-        onSave={onSave}
-      />
-
+    <section className="summary-stack">
       <ExpenseListPanel
-        eyebrow="申告・決算用"
         title={`経費一覧 ${money(total)}`}
-        expenses={visibleExpenses}
+        expenses={monthExpenses}
         hostName={hostName}
         canEdit
         canDelete={false}
+        actionLabel="登録"
+        actionIcon={Plus}
+        headerControl={
+          <div className="expense-month-control">
+            <SelectField label="年月" value={selectedMonth} options={monthOptions} onChange={setSelectedMonth} />
+          </div>
+        }
+        onAction={openCreateExpense}
         onEdit={onEdit}
         onDelete={onDelete}
         emptyTitle="まだ経費がありません"
         emptyBody="経費を保存すると一覧に表示されます。"
       />
+
+      {createOpen && (
+        <ExpenseEditorModal
+          title="経費登録"
+          draft={draft}
+          onChangeDraft={onChangeDraft}
+          onClose={closeCreateExpense}
+          onSave={saveCreateExpense}
+        />
+      )}
     </section>
   );
 }
@@ -4737,6 +5466,9 @@ function TaxReturnExpenseView({
   hosts,
   selectedHostId,
   expenses,
+  receivables,
+  receivablesEnabled,
+  payrollAdjustments,
   tableChecks,
   currentBusinessDate
 }: {
@@ -4745,10 +5477,26 @@ function TaxReturnExpenseView({
   hosts: Host[];
   selectedHostId: number;
   expenses: Expense[];
+  receivables: Receivable[];
+  receivablesEnabled: boolean;
+  payrollAdjustments: Record<number, PayrollAdjustment>;
   tableChecks: TableCheck[];
   currentBusinessDate: string;
 }) {
   const [payrollModalOpen, setPayrollModalOpen] = React.useState(false);
+  const [selectedPayrollMonth, setSelectedPayrollMonth] = React.useState<{
+    month: string;
+    label: string;
+    sales: number;
+    base: number;
+    payroll: number;
+    withholdingTax: number;
+    takeHome: number;
+    supplyItems: PayrollItem[];
+    deductionItems: PayrollItem[];
+    supplyTotal: number;
+    deductionTotal: number;
+  } | null>(null);
   const hostId = currentUser.role === "host" ? currentUser.hostId ?? selectedHostId : selectedHostId;
   const host = hosts.find((item) => item.id === hostId) ?? hosts[0];
   const yearOptions = Array.from(new Set([
@@ -4763,31 +5511,75 @@ function TaxReturnExpenseView({
   const taxYear = Number(selectedYear);
   const annualHostExpenses = expenses.filter((item) => item.ownerType === "host" && item.hostId === host.id && item.date.startsWith(selectedYear));
   const baseAmount = (check: TableCheck) => (settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check));
+  const withholdingEnabled = settings.withholdingTaxRate > 0;
+  const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
   const payrollMonths = Array.from({ length: 12 }, (_, index) => `${taxYear}-${String(index + 1).padStart(2, "0")}`);
   const monthlyPayrollRows = payrollMonths.map((month) => {
     const monthChecks = tableChecks.filter((check) => check.hostId === host.id && check.date.startsWith(month));
+    const sales = monthChecks.reduce((sum, check) => sum + tableTotal(check), 0);
     const base = monthChecks.reduce((sum, check) => sum + baseAmount(check), 0);
-    const payroll = Math.round(base * (settings.payrollRate / 100));
+    const adjustment = payrollAdjustments[host.id] ?? blankPayrollAdjustment();
+    const rate = adjustment.rate ?? settings.payrollRate;
+    const payroll = Math.round(base * (rate / 100));
+    const additionsTotal = adjustment.additions.reduce((sum, item) => sum + item.amount, 0);
+    const supplyTotal = payroll + additionsTotal;
+    const payrollDeduction = receivablesEnabled ? receivables
+      .filter((item) =>
+        item.hostId === host.id &&
+        item.collection === "payrollDeducted" &&
+        receivableBusinessDate(item, checkDateById, month.slice(0, 4)).startsWith(month)
+      )
+      .reduce((sum, item) => sum + item.amount, 0) : 0;
+    const withholdingTax = withholdingEnabled ? Math.round(supplyTotal * (settings.withholdingTaxRate / 100)) : 0;
+    const supplyItems: PayrollItem[] = [
+      { id: -1, label: `歩合支給 ${rate}%`, amount: payroll },
+      ...adjustment.additions
+    ];
+    const deductionItems: PayrollItem[] = [
+      ...adjustment.deductions,
+      ...(payrollDeduction > 0 ? [{ id: -2, label: "給与控除売掛", amount: payrollDeduction }] : []),
+      ...(withholdingTax > 0 ? [{ id: -3, label: "源泉所得税", amount: withholdingTax }] : [])
+    ];
+    const deductionTotal = deductionItems.reduce((sum, item) => sum + item.amount, 0);
     const [, monthNumber] = month.split("-");
     return {
       month,
       label: `${Number(monthNumber)}月`,
+      sales,
       base,
-      payroll
+      payroll,
+      withholdingTax,
+      takeHome: supplyTotal - deductionTotal,
+      supplyItems,
+      deductionItems,
+      supplyTotal,
+      deductionTotal
     };
   });
+  const closePayrollModal = () => {
+    setPayrollModalOpen(false);
+    setSelectedPayrollMonth(null);
+  };
   return (
     <>
       <article className="panel expense-category-panel tax-return-year-panel">
         <div className="summary-filter-row annual-year-row">
-          <SelectField label="表示年" value={selectedYear} options={yearOptions} onChange={setSelectedYear} />
+          <SelectField
+            label="表示年"
+            value={selectedYear}
+            options={yearOptions}
+            onChange={(value) => {
+              setSelectedYear(value);
+              setSelectedPayrollMonth(null);
+            }}
+          />
         </div>
       </article>
 
       <article className="panel expense-category-panel tax-return-payroll-panel">
         <div className="expense-category-list">
           <button className="expense-category-row" type="button" onClick={() => setPayrollModalOpen(true)}>
-            <span>給与月次</span>
+            <span>月別売上・手取り</span>
             <b>表示</b>
           </button>
         </div>
@@ -4812,23 +5604,74 @@ function TaxReturnExpenseView({
                 <p className="eyebrow">確定申告用</p>
                 <h3>給与月次</h3>
               </div>
-              <button className="icon-text-button ghost-button" type="button" onClick={() => setPayrollModalOpen(false)}>
+              <button className="icon-text-button ghost-button" type="button" onClick={closePayrollModal}>
                 閉じる
               </button>
             </div>
             <div className="expense-modal-list">
               <div className="expense-modal-row payroll-month-row expense-modal-head">
                 <span>月</span>
-                <span>給与対象</span>
-                <span>給与</span>
+                <span>売上</span>
+                <span>手取り</span>
               </div>
               {monthlyPayrollRows.map((row) => (
-                <div className="expense-modal-row payroll-month-row" key={row.month}>
+                <button className="expense-modal-row payroll-month-row selectable-modal-row" type="button" key={row.month} onClick={() => setSelectedPayrollMonth(row)}>
                   <strong>{row.label}</strong>
-                  <b>{yenMoney(row.base)}</b>
-                  <b>{yenMoney(row.payroll)}</b>
-                </div>
+                  <b>{yenMoney(row.sales)}</b>
+                  <b>{yenMoney(row.takeHome)}</b>
+                </button>
               ))}
+            </div>
+          </article>
+        </div>
+      )}
+
+      {selectedPayrollMonth && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="給与内訳">
+          <article className="panel checkout-modal expense-detail-modal">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">{selectedYear}年</p>
+                <h3>{selectedPayrollMonth.label} 内訳</h3>
+              </div>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setSelectedPayrollMonth(null)}>
+                閉じる
+              </button>
+            </div>
+            <div className="result-lines">
+              <div><span>売上</span><b>{yenMoney(selectedPayrollMonth.sales)}</b></div>
+              <div><span>計算元</span><b>{settings.payrollBase === "subtotal" ? "小計" : "総計"}</b></div>
+              <div><span>支給合計</span><b>{yenMoney(selectedPayrollMonth.supplyTotal)}</b></div>
+              <div><span>控除合計</span><b>-{yenMoney(selectedPayrollMonth.deductionTotal)}</b></div>
+              <div><span>手取り</span><b>{yenMoney(selectedPayrollMonth.takeHome)}</b></div>
+            </div>
+            <div className="payroll-breakdown-grid">
+              <section className="payroll-breakdown-box">
+                <h4>支給項目</h4>
+                <div className="expense-modal-list">
+                  {selectedPayrollMonth.supplyItems.map((item) => (
+                    <div className="expense-modal-row payroll-item-display-row" key={item.id}>
+                      <span>{item.label}</span>
+                      <b>{yenMoney(item.amount)}</b>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="payroll-breakdown-box">
+                <h4>控除項目</h4>
+                <div className="expense-modal-list">
+                  {selectedPayrollMonth.deductionItems.length === 0 ? (
+                    <p className="tax-note">控除なし</p>
+                  ) : (
+                    selectedPayrollMonth.deductionItems.map((item) => (
+                      <div className="expense-modal-row payroll-item-display-row" key={item.id}>
+                        <span>{item.label}</span>
+                        <b>-{yenMoney(item.amount)}</b>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
             </div>
           </article>
         </div>
@@ -4858,11 +5701,11 @@ function StoreAnnualView({
     currentBusinessDate.slice(0, 4),
     ...tableChecks.map((check) => check.date.slice(0, 4)),
     ...storeExpenses.map((item) => item.date.slice(0, 4)),
-    ...receivables.map((item) =>
-      item.sourceCheckId
-        ? checkDateById.get(item.sourceCheckId)?.slice(0, 4) ?? ""
-        : dateFromShortDue(item.due, currentBusinessDate.slice(0, 4)).slice(0, 4)
-    )
+      ...receivables.map((item) =>
+        item.sourceCheckId
+          ? (checkDateById.get(item.sourceCheckId) ?? item.date).slice(0, 4)
+          : (item.date || dateFromShortDue(item.due, currentBusinessDate.slice(0, 4))).slice(0, 4)
+      )
   ]))
     .filter(Boolean)
     .sort((a, b) => b.localeCompare(a))
@@ -4871,7 +5714,7 @@ function StoreAnnualView({
   const yearChecks = tableChecks.filter((check) => check.date.startsWith(selectedYear));
   const yearExpenses = storeExpenses.filter((item) => item.date.startsWith(selectedYear));
   const receivableDate = (item: Receivable) =>
-    item.sourceCheckId ? checkDateById.get(item.sourceCheckId) ?? "" : dateFromShortDue(item.due, selectedYear);
+    receivableBusinessDate(item, checkDateById, selectedYear);
   const yearOpenReceivables = receivables.filter((item) => receivableDate(item).startsWith(selectedYear));
   const yearSales = yearChecks.reduce((sum, check) => sum + tableTotal(check), 0);
   const yearPaid = yearChecks.reduce((sum, check) => sum + check.cashAmount + check.cardAmount, 0);
@@ -4992,24 +5835,29 @@ function ManagementView({
   settings,
   notice,
   installHint,
+  deviceLog,
   operationLogs,
   hosts,
   tableChecks,
+  receivables,
+  currentBusinessDate,
   customerProfiles,
   bottles,
   customerActions,
   hostName,
-  onUpdateCustomerProfile,
+  onSaveCustomerCaution,
   onAddBottle,
   onUpdateBottle,
   onDeleteBottle,
-  onAddCustomerAction,
-  onUpdateCustomerAction,
   onDeleteCustomerAction,
+  onMoveCustomerActionToOpenTable,
   onInstall,
   onLogout,
+  onExportBackup,
+  onImportBackup,
   onUpdateSettings,
   onClearDevice,
+  onClearAllDeviceLog,
   users,
   canManage,
   onUpdateUser,
@@ -5020,24 +5868,29 @@ function ManagementView({
   settings: StoreSettings;
   notice: string;
   installHint: string;
+  deviceLog: DeviceLogin[];
   operationLogs: OperationLog[];
   hosts: Host[];
   tableChecks: TableCheck[];
+  receivables: Receivable[];
+  currentBusinessDate: string;
   customerProfiles: CustomerProfile[];
   bottles: BottleKeep[];
   customerActions: CustomerAction[];
   hostName: (hostId?: number) => string;
-  onUpdateCustomerProfile: (id: number, patch: Partial<CustomerProfile>) => void;
+  onSaveCustomerCaution: (customer: string, hostId: number, caution: string) => void;
   onAddBottle: () => void;
   onUpdateBottle: (id: number, patch: Partial<BottleKeep>) => void;
   onDeleteBottle: (id: number) => void;
-  onAddCustomerAction: () => void;
-  onUpdateCustomerAction: (id: number, patch: Partial<CustomerAction>) => void;
   onDeleteCustomerAction: (id: number) => void;
+  onMoveCustomerActionToOpenTable: (action: CustomerAction) => void;
   onInstall: () => void;
   onLogout: () => void;
+  onExportBackup: () => void;
+  onImportBackup: (file: File) => void;
   onUpdateSettings: (settings: StoreSettings) => void;
   onClearDevice: () => void;
+  onClearAllDeviceLog: () => void;
   users: AppUser[];
   canManage: boolean;
   onUpdateUser: (id: number, patch: Partial<AppUser>) => void;
@@ -5045,6 +5898,7 @@ function ManagementView({
   onDeleteUser: (id: number) => void;
 }) {
   const canEditStoreSettings = currentUser.role === "admin" || currentUser.role === "staff";
+  const backupInputId = `backup-file-${currentUser.id}`;
 
   return (
     <section className="content-grid management-grid">
@@ -5064,11 +5918,12 @@ function ManagementView({
           <CustomerManagementPanel
             hosts={hosts}
             tableChecks={tableChecks}
+            receivables={receivables}
+            currentBusinessDate={currentBusinessDate}
             customerProfiles={customerProfiles}
             bottles={bottles}
             hostName={hostName}
             receivablesEnabled={settings.receivablesEnabled}
-            onUpdateCustomerProfile={onUpdateCustomerProfile}
           />
         </CollapsiblePanel>
         <CollapsiblePanel eyebrow="ボトル" title="ボトル管理" icon={ClipboardList} className="management-bottle-panel">
@@ -5081,17 +5936,27 @@ function ManagementView({
             onDeleteBottle={onDeleteBottle}
           />
         </CollapsiblePanel>
-        <CollapsiblePanel eyebrow="接客" title="予定・指名管理" icon={CheckCircle2} className="management-action-panel">
+        <CollapsiblePanel eyebrow="接客" title="来店予定管理" icon={CheckCircle2} className="management-action-panel">
           <CustomerActionManagementPanel
-            hosts={hosts}
             actions={customerActions}
             hostName={hostName}
-            onAddAction={onAddCustomerAction}
-            onUpdateAction={onUpdateCustomerAction}
             onDeleteAction={onDeleteCustomerAction}
+            onMoveToOpenTable={onMoveCustomerActionToOpenTable}
           />
         </CollapsiblePanel>
         </>
+      )}
+
+      {currentUser.role === "host" && currentUser.hostId && (
+        <CollapsiblePanel eyebrow="顧客" title="注意メモ" icon={UserRound} className="management-customer-panel">
+          <HostCustomerMemoPanel
+            host={hosts.find((host) => host.id === currentUser.hostId) ?? hosts[0]}
+            tableChecks={tableChecks}
+            customerProfiles={customerProfiles}
+            currentBusinessDate={currentBusinessDate}
+            onSaveCaution={onSaveCustomerCaution}
+          />
+        </CollapsiblePanel>
       )}
 
       {canEditStoreSettings && (
@@ -5201,15 +6066,63 @@ function ManagementView({
             <Download size={18} />
             {installHint}
           </button>
+          {canEditStoreSettings && (
+            <>
+              <button className="icon-text-button ghost-button" type="button" onClick={onExportBackup}>
+                <Download size={18} />
+                業務データ出力
+              </button>
+              <label className="icon-text-button ghost-button backup-import-label" htmlFor={backupInputId}>
+                <Upload size={18} />
+                復元
+              </label>
+              <input
+                className="visually-hidden-file"
+                id={backupInputId}
+                type="file"
+                accept="application/json"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) onImportBackup(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </>
+          )}
           <button className="icon-text-button ghost-button" type="button" onClick={onClearDevice}>
             <Smartphone size={18} />
             端末情報削除
           </button>
+          {canEditStoreSettings && (
+            <button className="icon-text-button ghost-button" type="button" onClick={onClearAllDeviceLog}>
+              <Trash2 size={18} />
+              端末履歴削除
+            </button>
+          )}
           <button className="icon-text-button ghost-button" type="button" onClick={onLogout}>
             <LogOut size={18} />
             ログアウト
           </button>
         </div>
+        {canEditStoreSettings && (
+          <div className="device-session-list">
+            {deviceLog.length === 0 ? (
+              <p className="tax-note">保存中の端末履歴はありません。</p>
+            ) : (
+              deviceLog.map((device) => (
+                <div className="device-session-row" key={device.id}>
+                  <div>
+                    <span>{device.userName}</span>
+                    <small>{roleLabel[device.role]} / {new Date(device.loginAt).toLocaleString("ja-JP")}</small>
+                  </div>
+                  <span className={device.current ? "status-pill status-ok" : "status-pill status-warn"}>
+                    {device.current ? "この端末" : "保存中"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
         <p className="tax-note">{notice}</p>
       </CollapsiblePanel>
 
@@ -5220,24 +6133,27 @@ function ManagementView({
 function CustomerManagementPanel({
   hosts,
   tableChecks,
+  receivables,
+  currentBusinessDate,
   customerProfiles,
   bottles,
   hostName,
-  receivablesEnabled,
-  onUpdateCustomerProfile
+  receivablesEnabled
 }: {
   hosts: Host[];
   tableChecks: TableCheck[];
+  receivables: Receivable[];
+  currentBusinessDate: string;
   customerProfiles: CustomerProfile[];
   bottles: BottleKeep[];
   hostName: (hostId?: number) => string;
   receivablesEnabled: boolean;
-  onUpdateCustomerProfile: (id: number, patch: Partial<CustomerProfile>) => void;
 }) {
   const [search, setSearch] = React.useState("");
   const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
   const normalizedSearch = search.trim().toLowerCase();
   const hostIds = React.useMemo(() => new Set(hosts.map((host) => host.id)), [hosts]);
+  const currentMonth = currentBusinessDate.slice(0, 7);
   const customers = React.useMemo(() => {
     const grouped = tableChecks.reduce<Record<string, {
       key: string;
@@ -5245,20 +6161,64 @@ function CustomerManagementPanel({
       hostId: number;
       count: number;
       total: number;
+      monthCount: number;
+      monthTotal: number;
+      hasReceivable: boolean;
       lastVisit: string;
+      lastVisitDate: string;
       checks: TableCheck[];
     }>>((acc, check) => {
       if (!hostIds.has(check.hostId)) return acc;
       const customer = check.customerName.trim() || "名前未設定";
       const key = `${check.hostId}:${customer}`;
       const visit = `${check.date} ${check.time}`;
-      acc[key] = acc[key] ?? { key, customer, hostId: check.hostId, count: 0, total: 0, lastVisit: visit, checks: [] };
+      acc[key] = acc[key] ?? {
+        key,
+        customer,
+        hostId: check.hostId,
+        count: 0,
+        total: 0,
+        monthCount: 0,
+        monthTotal: 0,
+        hasReceivable: false,
+        lastVisit: visit,
+        lastVisitDate: check.date,
+        checks: []
+      };
       acc[key].count += 1;
       acc[key].total += tableTotal(check);
+      if (check.date.startsWith(currentMonth)) {
+        acc[key].monthCount += 1;
+        acc[key].monthTotal += tableTotal(check);
+      }
       acc[key].lastVisit = acc[key].lastVisit.localeCompare(visit) > 0 ? acc[key].lastVisit : visit;
+      acc[key].lastVisitDate = acc[key].lastVisit.slice(0, 10);
       acc[key].checks.push(check);
       return acc;
     }, {});
+
+    receivables.forEach((item) => {
+      const host = hosts.find((hostItem) => hostItem.id === item.hostId);
+      if (!host || item.collection !== "active" || item.amount <= 0) return;
+      const key = `${item.hostId}:${item.customer}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          key,
+          customer: item.customer,
+          hostId: item.hostId,
+          count: 0,
+          total: 0,
+          monthCount: 0,
+          monthTotal: 0,
+          hasReceivable: true,
+          lastVisit: item.date,
+          lastVisitDate: item.date,
+          checks: []
+        };
+      } else {
+        grouped[key].hasReceivable = true;
+      }
+    });
 
     return Object.values(grouped)
       .map((item) => ({
@@ -5266,10 +6226,11 @@ function CustomerManagementPanel({
         checks: item.checks.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
       }))
       .sort((a, b) => b.lastVisit.localeCompare(a.lastVisit) || b.total - a.total);
-  }, [hostIds, tableChecks]);
+  }, [currentMonth, hostIds, hosts, receivables, tableChecks]);
   const visibleCustomers = customers.filter((item) => {
     if (!normalizedSearch) return true;
-    const searchableText = `${item.customer} ${hostName(item.hostId)} ${item.total} ${item.lastVisit}`.toLowerCase();
+    const receivableText = item.hasReceivable ? "売掛あり" : "売掛なし";
+    const searchableText = `${item.customer} ${hostName(item.hostId)} ${item.monthTotal} ${item.lastVisitDate} ${receivableText}`.toLowerCase();
     return searchableText.includes(normalizedSearch);
   });
   const selectedCustomer = selectedKey ? customers.find((item) => item.key === selectedKey) : null;
@@ -5299,9 +6260,10 @@ function CustomerManagementPanel({
         <div className="customer-management-row customer-management-head">
           <span>客名</span>
           <span>担当</span>
-          <span>回数</span>
-          <span>合計</span>
           <span>最終来店</span>
+          <span>当月回数</span>
+          <span>当月売上</span>
+          <span>売掛</span>
         </div>
         {visibleCustomers.length === 0 ? (
           <div className="plain-note">
@@ -5316,31 +6278,14 @@ function CustomerManagementPanel({
             <button className="customer-management-row selectable-row" type="button" key={item.key} onClick={() => setSelectedKey(item.key)}>
               <span>{item.customer}</span>
               <span>{hostName(item.hostId)}</span>
-              <span>{item.count}件</span>
-              <b>{yenMoney(item.total)}</b>
-              <span>{item.lastVisit}</span>
+              <span>{item.lastVisitDate || "-"}</span>
+              <span>{item.monthCount}回</span>
+              <b>{yenMoney(item.monthTotal)}</b>
+              <span>{receivablesEnabled && item.hasReceivable ? "あり" : "なし"}</span>
             </button>
           ))
         )}
       </div>
-
-      {customerProfiles.length > 0 && (
-        <div className="customer-profile-editor-list">
-          {customerProfiles.map((profile) => (
-            <div className="customer-profile-editor-row" key={profile.id}>
-              <div className="customer-profile-title">
-                <span>{profile.customer}</span>
-                <small>{hostName(profile.hostId)}</small>
-              </div>
-              <TextField label="誕生日" value={profile.birthday} onChange={(birthday) => onUpdateCustomerProfile(profile.id, { birthday })} />
-              <TextField label="好み" value={profile.favoriteDrink} onChange={(favoriteDrink) => onUpdateCustomerProfile(profile.id, { favoriteDrink })} />
-              <TextField label="連絡" value={profile.lastContact} onChange={(lastContact) => onUpdateCustomerProfile(profile.id, { lastContact })} />
-              <TextField label="メモ" value={profile.visitNote} onChange={(visitNote) => onUpdateCustomerProfile(profile.id, { visitNote })} />
-              <TextField label="注意" value={profile.caution} onChange={(caution) => onUpdateCustomerProfile(profile.id, { caution })} />
-            </div>
-          ))}
-        </div>
-      )}
 
       {selectedCustomer && (
         <CustomerDetailModal
@@ -5358,20 +6303,118 @@ function CustomerManagementPanel({
   );
 }
 
+function HostCustomerMemoPanel({
+  host,
+  tableChecks,
+  customerProfiles,
+  currentBusinessDate,
+  onSaveCaution
+}: {
+  host: Host;
+  tableChecks: TableCheck[];
+  customerProfiles: CustomerProfile[];
+  currentBusinessDate: string;
+  onSaveCaution: (customer: string, hostId: number, caution: string) => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const currentMonth = currentBusinessDate.slice(0, 7);
+  const normalizedSearch = search.trim().toLowerCase();
+  const customers = React.useMemo(() => {
+    const grouped = tableChecks
+      .filter((check) => check.hostId === host.id)
+      .reduce<Record<string, {
+        customer: string;
+        lastVisit: string;
+        monthCount: number;
+        monthTotal: number;
+      }>>((acc, check) => {
+        const customer = check.customerName.trim() || "名前未設定";
+        const visit = `${check.date} ${check.time}`;
+        acc[customer] = acc[customer] ?? { customer, lastVisit: visit, monthCount: 0, monthTotal: 0 };
+        acc[customer].lastVisit = acc[customer].lastVisit.localeCompare(visit) > 0 ? acc[customer].lastVisit : visit;
+        if (check.date.startsWith(currentMonth)) {
+          acc[customer].monthCount += 1;
+          acc[customer].monthTotal += tableTotal(check);
+        }
+        return acc;
+      }, {});
+
+    customerProfiles
+      .filter((profile) => profile.hostId === host.id)
+      .forEach((profile) => {
+        grouped[profile.customer] = grouped[profile.customer] ?? {
+          customer: profile.customer,
+          lastVisit: "",
+          monthCount: 0,
+          monthTotal: 0
+        };
+      });
+
+    return Object.values(grouped).sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
+  }, [currentMonth, customerProfiles, host.id, tableChecks]);
+  const visibleCustomers = customers.filter((item) => {
+    if (!normalizedSearch) return true;
+    const profile = customerProfiles.find((profileItem) => profileItem.customer === item.customer && profileItem.hostId === host.id);
+    return `${item.customer} ${profile?.caution ?? ""} ${item.monthTotal}`.toLowerCase().includes(normalizedSearch);
+  });
+
+  return (
+    <div className="host-customer-memo-panel">
+      <div className="customer-management-toolbar">
+        <label className="search-shell customer-management-search">
+          <span>検索</span>
+          <input
+            type="search"
+            value={search}
+            placeholder="客名・注意"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <span className="status-pill status-ok">{visibleCustomers.length}件</span>
+      </div>
+      <div className="host-customer-memo-list">
+        {visibleCustomers.length === 0 ? (
+          <div className="plain-note">
+            <UserRound size={18} />
+            <div>
+              <strong>顧客なし</strong>
+              <p>会計登録された顧客がここに表示されます。</p>
+            </div>
+          </div>
+        ) : (
+          visibleCustomers.map((item) => {
+            const profile = customerProfiles.find((profileItem) => profileItem.customer === item.customer && profileItem.hostId === host.id);
+            return (
+              <div className="host-customer-memo-row" key={item.customer}>
+                <div className="host-customer-memo-summary">
+                  <span>{item.customer}</span>
+                  <small>最終 {item.lastVisit.slice(0, 10) || "-"}</small>
+                  <small>当月 {item.monthCount}回 / {money(item.monthTotal)}</small>
+                </div>
+                <TextField
+                  label="注意"
+                  value={profile?.caution ?? ""}
+                  onChange={(caution) => onSaveCaution(item.customer, host.id, caution)}
+                />
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CustomerActionManagementPanel({
-  hosts,
   actions,
   hostName,
-  onAddAction,
-  onUpdateAction,
-  onDeleteAction
+  onDeleteAction,
+  onMoveToOpenTable
 }: {
-  hosts: Host[];
   actions: CustomerAction[];
   hostName: (hostId?: number) => string;
-  onAddAction: () => void;
-  onUpdateAction: (id: number, patch: Partial<CustomerAction>) => void;
   onDeleteAction: (id: number) => void;
+  onMoveToOpenTable: (action: CustomerAction) => void;
 }) {
   const [search, setSearch] = React.useState("");
   const normalizedSearch = search.trim().toLowerCase();
@@ -5395,10 +6438,7 @@ function CustomerActionManagementPanel({
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <button className="icon-text-button" type="button" onClick={onAddAction}>
-          <Plus size={16} />
-          追加
-        </button>
+        <span className="status-pill status-ok">{visibleActions.length}件</span>
       </div>
 
       <div className="action-management-list">
@@ -5406,37 +6446,25 @@ function CustomerActionManagementPanel({
           <div className="plain-note">
             <CheckCircle2 size={18} />
             <div>
-              <strong>予定なし</strong>
-              <p>接客予定や連絡予定を追加するとここに表示されます。</p>
+              <strong>来店予定なし</strong>
+              <p>来店予定を追加するとここに表示されます。</p>
             </div>
           </div>
         ) : (
           visibleActions.map((action) => (
-            <div className={`action-row action-${action.status}`} key={action.id}>
-              <TextField label="日付" value={action.date} onChange={(date) => onUpdateAction(action.id, { date })} />
-              <TextField label="時間" value={action.time} onChange={(time) => onUpdateAction(action.id, { time })} />
-              <TextField label="客名" value={action.customer} onChange={(customer) => onUpdateAction(action.id, { customer })} />
-              <SelectField
-                label="担当"
-                value={String(action.hostId)}
-                options={hosts.map((host) => ({ label: host.name, value: String(host.id) }))}
-                onChange={(hostId) => onUpdateAction(action.id, { hostId: Number(hostId) })}
-              />
-              <SelectField
-                label="種別"
-                value={action.kind}
-                options={customerActionKindOptions}
-                onChange={(kind) => onUpdateAction(action.id, { kind: kind as CustomerActionKind })}
-              />
-              <NumberField label="目標" value={action.targetAmount} min={0} step={1000} onChange={(targetAmount) => onUpdateAction(action.id, { targetAmount })} />
-              <SelectField
-                label="状態"
-                value={action.status}
-                options={customerActionStatusOptions}
-                onChange={(status) => onUpdateAction(action.id, { status: status as CustomerActionStatus })}
-              />
-              <TextField label="メモ" value={action.memo} onChange={(memo) => onUpdateAction(action.id, { memo })} />
-              <button className="icon-button danger-button" type="button" aria-label="予定削除" onClick={() => onDeleteAction(action.id)}>
+            <div className={`action-row action-readonly-row action-${action.status}`} key={action.id}>
+              <span>{action.date}</span>
+              <span>{action.time}</span>
+              <b>{action.customer}</b>
+              <span>{hostName(action.hostId)}</span>
+              <span>{customerActionKindLabel[action.kind]}</span>
+              <span>{action.targetAmount > 0 ? money(action.targetAmount) : "目標なし"}</span>
+              <small>{action.memo || "-"}</small>
+              <button className="icon-text-button ghost-button action-open-table-button" type="button" onClick={() => onMoveToOpenTable(action)}>
+                <Plus size={14} />
+                卓追加
+              </button>
+              <button className="icon-button danger-button" type="button" aria-label="来店予定削除" onClick={() => onDeleteAction(action.id)}>
                 <Trash2 size={16} />
               </button>
             </div>
@@ -5446,18 +6474,6 @@ function CustomerActionManagementPanel({
     </div>
   );
 }
-
-const bottleStatusOptions = [
-  { label: "有効", value: "active" },
-  { label: "残少", value: "low" },
-  { label: "空", value: "empty" }
-];
-
-const bottleStatusLabel: Record<BottleKeep["status"], string> = {
-  active: "有効",
-  low: "残少",
-  empty: "空"
-};
 
 function BottleManagementPanel({
   hosts,
@@ -5479,10 +6495,10 @@ function BottleManagementPanel({
   const visibleBottles = bottles
     .filter((bottle) => {
       if (!normalizedSearch) return true;
-      const searchableText = `${bottle.customer} ${hostName(bottle.hostId)} ${bottle.bottleName} ${bottle.memo} ${bottleStatusLabel[bottle.status]}`.toLowerCase();
+      const searchableText = `${bottle.customer} ${hostName(bottle.hostId)} ${bottle.bottleName} ${bottle.memo}`.toLowerCase();
       return searchableText.includes(normalizedSearch);
     })
-    .sort((a, b) => a.status.localeCompare(b.status) || a.expiresAt.localeCompare(b.expiresAt));
+    .sort((a, b) => a.customer.localeCompare(b.customer) || a.bottleName.localeCompare(b.bottleName));
 
   return (
     <div className="bottle-management">
@@ -5513,7 +6529,7 @@ function BottleManagementPanel({
           </div>
         ) : (
           visibleBottles.map((bottle) => (
-            <div className={`bottle-row bottle-${bottle.status}`} key={bottle.id}>
+            <div className="bottle-row" key={bottle.id}>
               <TextField label="客名" value={bottle.customer} onChange={(customer) => onUpdateBottle(bottle.id, { customer })} />
               <SelectField
                 label="担当"
@@ -5522,15 +6538,8 @@ function BottleManagementPanel({
                 onChange={(hostId) => onUpdateBottle(bottle.id, { hostId: Number(hostId) })}
               />
               <TextField label="ボトル" value={bottle.bottleName} onChange={(bottleName) => onUpdateBottle(bottle.id, { bottleName })} />
-              <NumberField label="残量%" value={bottle.remaining} min={0} max={100} step={5} onChange={(remaining) => onUpdateBottle(bottle.id, { remaining })} />
               <TextField label="開封" value={bottle.openedDate} onChange={(openedDate) => onUpdateBottle(bottle.id, { openedDate })} />
               <TextField label="期限" value={bottle.expiresAt} onChange={(expiresAt) => onUpdateBottle(bottle.id, { expiresAt })} />
-              <SelectField
-                label="状態"
-                value={bottle.status}
-                options={bottleStatusOptions}
-                onChange={(status) => onUpdateBottle(bottle.id, { status: status as BottleKeep["status"] })}
-              />
               <TextField label="メモ" value={bottle.memo} onChange={(memo) => onUpdateBottle(bottle.id, { memo })} />
               <button className="icon-button danger-button" type="button" aria-label="ボトル削除" onClick={() => onDeleteBottle(bottle.id)}>
                 <Trash2 size={16} />
@@ -5577,6 +6586,7 @@ function OperationLogPanel({ logs }: { logs: OperationLog[] }) {
           options={[
             { label: "すべて", value: "all" },
             { label: "会計", value: "会計" },
+            { label: "来店予定", value: "来店予定" },
             { label: "経費", value: "経費" },
             { label: "締め", value: "締め" }
           ]}
@@ -5719,6 +6729,100 @@ function TextField({
     <label className="number-field">
       <span>{label}</span>
       <input type="text" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function DateSelectField({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [rawYear, rawMonth, rawDay] = value.split("-").map(Number);
+  const year = rawYear || new Date().getFullYear();
+  const month = Math.min(12, Math.max(1, rawMonth || 1));
+  const day = Math.min(daysInMonth(year, month), Math.max(1, rawDay || 1));
+  const yearOptions = Array.from({ length: 3 }, (_, index) => String(year - 1 + index));
+  const monthOptions = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
+  const dayOptions = Array.from({ length: daysInMonth(year, month) }, (_, index) => String(index + 1).padStart(2, "0"));
+  const updateDate = (nextYear: number, nextMonth: number, nextDay: number) => {
+    const clampedDay = Math.min(daysInMonth(nextYear, nextMonth), Math.max(1, nextDay));
+    onChange(`${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`);
+  };
+
+  return (
+    <label className="number-field date-select-field">
+      <span>{label}</span>
+      <div className="date-select-controls">
+        <select value={String(year)} onChange={(event) => updateDate(Number(event.target.value), month, day)}>
+          {yearOptions.map((option) => (
+            <option value={option} key={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <small>年</small>
+        <select value={String(month).padStart(2, "0")} onChange={(event) => updateDate(year, Number(event.target.value), day)}>
+          {monthOptions.map((option) => (
+            <option value={option} key={option}>
+              {Number(option)}
+            </option>
+          ))}
+        </select>
+        <small>月</small>
+        <select value={String(day).padStart(2, "0")} onChange={(event) => updateDate(year, month, Number(event.target.value))}>
+          {dayOptions.map((option) => (
+            <option value={option} key={option}>
+              {Number(option)}
+            </option>
+          ))}
+        </select>
+        <small>日</small>
+      </div>
+    </label>
+  );
+}
+
+function TimeSelectField({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const normalizedTime = normalizeActionTime(value);
+  const [hour, minute] = normalizedTime.split(":");
+  const updateTime = (nextHour: string, nextMinute: string) => onChange(`${nextHour}:${nextMinute}`);
+
+  return (
+    <label className="number-field time-select-field">
+      <span>{label}</span>
+      <div className="time-select-controls">
+        <select value={hour} onChange={(event) => updateTime(event.target.value, minute)}>
+          {hourOptions.map((option) => (
+            <option value={option.value} key={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="time-separator">:</span>
+        <select value={minute} onChange={(event) => updateTime(hour, event.target.value)}>
+          {minuteOptions.map((option) => (
+            <option value={option.value} key={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button className="icon-button ghost-button time-now-button" type="button" aria-label="現在時刻を入れる" onClick={() => onChange(currentTime())}>
+          <Clock size={14} />
+        </button>
+      </div>
     </label>
   );
 }
