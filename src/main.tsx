@@ -189,6 +189,25 @@ type PayrollAdjustment = {
   deductions: PayrollItem[];
 };
 
+type PayrollStatementRow = {
+  host: Host;
+  month: string;
+  base: number;
+  rate: number;
+  salaryBase: number;
+  adjustment: PayrollAdjustment;
+  additionsTotal: number;
+  payrollDeduction: number;
+  manualDeductionsTotal: number;
+  withholdingTax: number;
+  deductionTotal: number;
+  supplyTotal: number;
+  supplyItems: PayrollItem[];
+  deductionItems: PayrollItem[];
+  uncollectedReceivable: number;
+  payable: number;
+};
+
 type RegisterClose = {
   id: number;
   date: string;
@@ -793,6 +812,7 @@ const printDocument = (title: string, bodyHtml: string) => {
     th{background:#f3f4f6} td.amount{text-align:right;font-variant-numeric:tabular-nums}
     .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
     .box{border:1px solid #d1d5db;padding:10px}.box span{display:block;color:#6b7280;font-size:11px}.box b{font-size:16px}
+    .statement-page{break-after:page;page-break-after:always}.statement-page:last-child{break-after:auto;page-break-after:auto}
     @media print{button{display:none} body{margin:12mm}}
   </style></head><body><button onclick="window.print()">PDF保存/印刷</button>${bodyHtml}</body></html>`);
   popup.document.close();
@@ -805,6 +825,110 @@ const tableTotal = (check: TableCheck) => {
   const tax = Math.round((check.subtotal + service) * (check.taxRate / 100));
   return Math.max(0, check.subtotal + service + tax - check.discount);
 };
+
+const payrollBaseAmount = (check: TableCheck, settings: StoreSettings) =>
+  settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check);
+
+const calculatePayrollStatementRow = ({
+  host,
+  month,
+  settings,
+  tableChecks,
+  receivables,
+  receivablesEnabled,
+  payrollAdjustments,
+  checkDateById
+}: {
+  host: Host;
+  month: string;
+  settings: StoreSettings;
+  tableChecks: TableCheck[];
+  receivables: Receivable[];
+  receivablesEnabled: boolean;
+  payrollAdjustments: Record<number, PayrollAdjustment>;
+  checkDateById: Map<number, string>;
+}): PayrollStatementRow => {
+  const hostChecks = tableChecks.filter((check) => check.hostId === host.id && check.date.startsWith(month));
+  const base = hostChecks.reduce((sum, check) => sum + payrollBaseAmount(check, settings), 0);
+  const adjustment = payrollAdjustments[host.id] ?? blankPayrollAdjustment();
+  const rate = adjustment.rate ?? settings.payrollRate;
+  const salaryBase = Math.round(base * (rate / 100));
+  const additionsTotal = adjustment.additions.reduce((sum, item) => sum + item.amount, 0);
+  const manualDeductionsTotal = adjustment.deductions.reduce((sum, item) => sum + item.amount, 0);
+  const payrollDeduction = receivablesEnabled ? receivables
+    .filter((item) =>
+      item.hostId === host.id &&
+      item.collection === "payrollDeducted" &&
+      receivableBusinessDate(item, checkDateById, month.slice(0, 4)).startsWith(month)
+    )
+    .reduce((sum, item) => sum + item.amount, 0) : 0;
+  const uncollectedReceivable = receivablesEnabled ? receivables
+    .filter((item) => item.hostId === host.id)
+    .reduce((sum, item) => sum + item.amount, 0) : 0;
+  const supplyTotal = salaryBase + additionsTotal;
+  const withholdingTax = settings.withholdingTaxRate > 0 ? Math.round(supplyTotal * (settings.withholdingTaxRate / 100)) : 0;
+  const deductionTotal = manualDeductionsTotal + payrollDeduction + withholdingTax;
+  const supplyItems: PayrollItem[] = [
+    { id: -1, label: `歩合支給 ${rate}%`, amount: salaryBase },
+    ...adjustment.additions
+  ];
+  const deductionItems: PayrollItem[] = [
+    ...adjustment.deductions,
+    ...(payrollDeduction > 0 ? [{ id: -2, label: "給与控除売掛", amount: payrollDeduction }] : []),
+    ...(withholdingTax > 0 ? [{ id: -3, label: "源泉所得税", amount: withholdingTax }] : [])
+  ];
+
+  return {
+    host,
+    month,
+    base,
+    rate,
+    salaryBase,
+    adjustment,
+    additionsTotal,
+    payrollDeduction,
+    manualDeductionsTotal,
+    withholdingTax,
+    deductionTotal,
+    supplyTotal,
+    supplyItems,
+    deductionItems,
+    uncollectedReceivable,
+    payable: supplyTotal - deductionTotal
+  };
+};
+
+const payrollStatementHtml = (row: PayrollStatementRow, settings: StoreSettings) => {
+  const supplyRows = row.supplyItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">${yenMoney(item.amount)}</td></tr>`).join("");
+  const deductionRows = row.deductionItems.length > 0
+    ? row.deductionItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">-${yenMoney(item.amount)}</td></tr>`).join("")
+    : `<tr><td>控除なし</td><td class="amount">${yenMoney(0)}</td></tr>`;
+
+  return `<section class="statement-page">
+    <h1>${htmlEscape(row.month)} 給与明細</h1>
+    <p>${htmlEscape(row.host.name)}</p>
+    <div class="summary">
+      <div class="box"><span>売上</span><b>${yenMoney(row.base)}</b></div>
+      <div class="box"><span>支給合計</span><b>${yenMoney(row.supplyTotal)}</b></div>
+      <div class="box"><span>支給額</span><b>${yenMoney(row.payable)}</b></div>
+    </div>
+    <h2>支給</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${supplyRows}</tbody></table>
+    <h2>控除</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${deductionRows}</tbody></table>
+    <h2>内訳</h2><table><tbody>
+      <tr><th>計算元</th><td>${settings.payrollBase === "subtotal" ? "小計" : "総計"}</td></tr>
+      <tr><th>歩合率</th><td>${row.rate}%</td></tr>
+      <tr><th>給与控除売掛</th><td>-${yenMoney(row.payrollDeduction)}</td></tr>
+      ${row.withholdingTax > 0 ? `<tr><th>源泉所得税</th><td>-${yenMoney(row.withholdingTax)}</td></tr>` : ""}
+      <tr><th>控除合計</th><td>-${yenMoney(row.deductionTotal)}</td></tr>
+    </tbody></table>
+  </section>`;
+};
+
+const printPayrollStatement = (row: PayrollStatementRow, settings: StoreSettings) =>
+  printDocument(`${row.month} ${row.host.name} 給与明細`, payrollStatementHtml(row, settings));
+
+const printPayrollStatements = (rows: PayrollStatementRow[], month: string, settings: StoreSettings) =>
+  printDocument(`${month} 給与明細`, rows.map((row) => payrollStatementHtml(row, settings)).join(""));
 
 const incomeTaxRows = [
   { min: 1000, max: 1949000, rate: 0.05, deduction: 0 },
@@ -2196,6 +2320,7 @@ function App() {
           expenses={expenses}
           receivables={visibleReceivables}
           receivablesEnabled={receivablesEnabled}
+          payrollAdjustments={payrollAdjustments}
           tableChecks={tableChecks}
           currentBusinessDate={currentBusinessDate}
           onSelectHost={setSelectedHostId}
@@ -2214,6 +2339,7 @@ function App() {
                 expenses={expenses}
                 receivables={visibleReceivables}
                 receivablesEnabled={receivablesEnabled}
+                payrollAdjustments={payrollAdjustments}
                 tableChecks={tableChecks}
                 currentBusinessDate={currentBusinessDate}
                 onSelectHost={setSelectedHostId}
@@ -3234,44 +3360,19 @@ function PayrollView({
   }, [currentBusinessDate, tableChecks]);
   const [selectedMonth, setSelectedMonth] = React.useState(currentBusinessDate.slice(0, 7));
   const [editingHostId, setEditingHostId] = React.useState<number | null>(null);
-  const monthChecks = tableChecks.filter((check) => check.date.startsWith(selectedMonth));
   const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
-  const baseAmount = (check: TableCheck) => (settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check));
   const withholdingTaxRate = settings.withholdingTaxRate ?? 0;
   const withholdingEnabled = withholdingTaxRate > 0;
-  const payrollRows = hosts.map((host) => {
-    const hostChecks = monthChecks.filter((check) => check.hostId === host.id);
-    const base = hostChecks.reduce((sum, check) => sum + baseAmount(check), 0);
-    const adjustment = payrollAdjustments[host.id] ?? blankPayrollAdjustment();
-    const rate = adjustment.rate ?? settings.payrollRate;
-    const salaryBase = Math.round(base * (rate / 100));
-    const additionsTotal = adjustment.additions.reduce((sum, item) => sum + item.amount, 0);
-    const manualDeductionsTotal = adjustment.deductions.reduce((sum, item) => sum + item.amount, 0);
-    const payrollDeduction = receivablesEnabled ? receivables
-      .filter((item) =>
-        item.hostId === host.id &&
-        item.collection === "payrollDeducted" &&
-        receivableBusinessDate(item, checkDateById, selectedMonth.slice(0, 4)).startsWith(selectedMonth)
-      )
-      .reduce((sum, item) => sum + item.amount, 0) : 0;
-    const uncollectedReceivable = receivablesEnabled ? receivables
-      .filter((item) => item.hostId === host.id)
-      .reduce((sum, item) => sum + item.amount, 0) : 0;
-    const supplyTotal = salaryBase + additionsTotal;
-    const withholdingTax = withholdingEnabled ? Math.round(supplyTotal * (withholdingTaxRate / 100)) : 0;
-    const deductionTotal = manualDeductionsTotal + payrollDeduction + withholdingTax;
-    const payable = supplyTotal - deductionTotal;
-    const supplyItems: PayrollItem[] = [
-      { id: -1, label: `歩合支給 ${rate}%`, amount: salaryBase },
-      ...adjustment.additions
-    ];
-    const deductionItems: PayrollItem[] = [
-      ...adjustment.deductions,
-      ...(payrollDeduction > 0 ? [{ id: -2, label: "給与控除売掛", amount: payrollDeduction }] : []),
-      ...(withholdingTax > 0 ? [{ id: -3, label: "源泉所得税", amount: withholdingTax }] : [])
-    ];
-    return { host, base, rate, salaryBase, adjustment, additionsTotal, payrollDeduction, manualDeductionsTotal, withholdingTax, deductionTotal, supplyTotal, supplyItems, deductionItems, uncollectedReceivable, payable };
-  });
+  const payrollRows = hosts.map((host) => calculatePayrollStatementRow({
+    host,
+    month: selectedMonth,
+    settings,
+    tableChecks,
+    receivables,
+    receivablesEnabled,
+    payrollAdjustments,
+    checkDateById
+  }));
   const totals = payrollRows.reduce(
     (acc, row) => ({
       uncollectedReceivable: acc.uncollectedReceivable + row.uncollectedReceivable,
@@ -3305,8 +3406,10 @@ function PayrollView({
       return { ...current, [hostId]: { ...base, [type]: base[type].filter((item) => item.id !== itemId) } };
     });
   };
+  const payrollItemSummary = (items: PayrollItem[]) =>
+    items.length > 0 ? items.map((item) => `${item.label}:${item.amount}`).join(" / ") : "";
   const exportPayrollCsv = () => {
-    const header = ["月", "ホスト", "売上", "歩合率", "歩合支給", "追加支給", "支給合計", "給与控除売掛", "手動控除", "源泉所得税", "控除合計", "支給額", "未回収売掛"];
+    const header = ["月", "ホスト", "売上", "歩合率", "歩合支給", "追加支給", "支給項目", "支給合計", "給与控除売掛", "手動控除", "控除項目", "源泉所得税", "控除合計", "支給額", "未回収売掛"];
     const rows = payrollRows.map((row) => [
       selectedMonth,
       row.host.name,
@@ -3314,38 +3417,17 @@ function PayrollView({
       `${row.rate}%`,
       row.salaryBase,
       row.additionsTotal,
+      payrollItemSummary(row.supplyItems),
       row.supplyTotal,
       row.payrollDeduction,
       row.manualDeductionsTotal,
+      payrollItemSummary(row.deductionItems),
       row.withholdingTax,
       row.deductionTotal,
       row.payable,
       row.uncollectedReceivable
     ]);
     downloadCsv(header, rows, `payroll-${selectedMonth}.csv`);
-  };
-  const printPayrollStatement = (row: typeof payrollRows[number]) => {
-    const supplyRows = row.supplyItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">${yenMoney(item.amount)}</td></tr>`).join("");
-    const deductionRows = row.deductionItems.length > 0
-      ? row.deductionItems.map((item) => `<tr><td>${htmlEscape(item.label)}</td><td class="amount">-${yenMoney(item.amount)}</td></tr>`).join("")
-      : `<tr><td>控除なし</td><td class="amount">${yenMoney(0)}</td></tr>`;
-    printDocument(
-      `${selectedMonth} ${row.host.name} 給与明細`,
-      `<h1>${htmlEscape(selectedMonth)} 給与明細</h1>
-       <p>${htmlEscape(row.host.name)}</p>
-       <div class="summary">
-        <div class="box"><span>売上</span><b>${yenMoney(row.base)}</b></div>
-        <div class="box"><span>支給合計</span><b>${yenMoney(row.supplyTotal)}</b></div>
-        <div class="box"><span>支給額</span><b>${yenMoney(row.payable)}</b></div>
-       </div>
-       <h2>支給</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${supplyRows}</tbody></table>
-       <h2>控除</h2><table><thead><tr><th>項目</th><th>金額</th></tr></thead><tbody>${deductionRows}</tbody></table>
-       <h2>内訳</h2><table><tbody>
-        <tr><th>計算元</th><td>${settings.payrollBase === "subtotal" ? "小計" : "総計"}</td></tr>
-        <tr><th>歩合率</th><td>${row.rate}%</td></tr>
-        <tr><th>控除合計</th><td>-${yenMoney(row.deductionTotal)}</td></tr>
-       </tbody></table>`
-    );
   };
 
   return (
@@ -3366,6 +3448,10 @@ function PayrollView({
             <button className="icon-text-button ghost-button" type="button" onClick={exportPayrollCsv}>
               <Download size={14} />
               給与CSV
+            </button>
+            <button className="icon-text-button ghost-button" type="button" onClick={() => printPayrollStatements(payrollRows, selectedMonth, settings)}>
+              <FileText size={14} />
+              明細PDF一括
             </button>
           </div>
         </div>
@@ -3514,7 +3600,7 @@ function PayrollView({
               <div><span>支給額</span><b>{yenMoney(editingRow.payable)}</b></div>
             </div>
             <div className="button-row full-button-row">
-              <button className="install-button" type="button" onClick={() => printPayrollStatement(editingRow)}>
+              <button className="install-button" type="button" onClick={() => printPayrollStatement(editingRow, settings)}>
                 <FileText size={16} />
                 明細PDF
               </button>
@@ -5393,6 +5479,7 @@ function AnnualView({
   expenses,
   receivables,
   receivablesEnabled,
+  payrollAdjustments,
   tableChecks,
   currentBusinessDate,
   onSelectHost
@@ -5404,6 +5491,7 @@ function AnnualView({
   expenses: Expense[];
   receivables: Receivable[];
   receivablesEnabled: boolean;
+  payrollAdjustments: Record<number, PayrollAdjustment>;
   tableChecks: TableCheck[];
   currentBusinessDate: string;
   onSelectHost: (id: number) => void;
@@ -5427,15 +5515,26 @@ function AnnualView({
   const taxYear = Number(selectedYear);
   const annualHostExpenses = expenses.filter((item) => item.ownerType === "host" && item.hostId === host.id && item.date.startsWith(selectedYear));
   const annualHostChecks = tableChecks.filter((check) => check.hostId === host.id && check.date.startsWith(selectedYear));
-  const payrollBaseAmount = (check: TableCheck) => (settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check));
+  const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
+  const payrollRows = Array.from({ length: 12 }, (_, index) => `${taxYear}-${String(index + 1).padStart(2, "0")}`)
+    .map((month) => calculatePayrollStatementRow({
+      host,
+      month,
+      settings,
+      tableChecks,
+      receivables,
+      receivablesEnabled,
+      payrollAdjustments,
+      checkDateById
+    }));
   const annualSales = annualHostChecks.reduce((sum, check) => sum + tableTotal(check), 0);
   const annualBaseExpenses = annualHostExpenses.reduce((sum, item) => sum + item.amount, 0);
-  const businessIncome = Math.round(annualHostChecks.reduce((sum, check) => sum + payrollBaseAmount(check), 0) * (settings.payrollRate / 100));
+  const businessIncome = payrollRows.reduce((sum, row) => sum + row.supplyTotal, 0);
   const totalIncome = Math.max(0, businessIncome - annualBaseExpenses);
   const deduction = basicDeduction(taxYear, totalIncome);
   const taxableIncome = Math.floor(Math.max(0, totalIncome - deduction) / 1000) * 1000;
   const baseIncomeTax = incomeTaxByProgressiveRate(taxableIncome);
-  const withholdingTax = settings.withholdingTaxRate > 0 ? Math.round(businessIncome * (settings.withholdingTaxRate / 100)) : 0;
+  const withholdingTax = payrollRows.reduce((sum, row) => sum + row.withholdingTax, 0);
   const incomeTax = baseIncomeTax - withholdingTax;
   const residentTax = Math.round(taxableIncome * 0.1);
 
@@ -5491,6 +5590,7 @@ function TaxReturnExpenseView({
 }) {
   const [payrollModalOpen, setPayrollModalOpen] = React.useState(false);
   const [selectedPayrollMonth, setSelectedPayrollMonth] = React.useState<{
+    row: PayrollStatementRow;
     month: string;
     label: string;
     sales: number;
@@ -5516,50 +5616,35 @@ function TaxReturnExpenseView({
   const [selectedYear, setSelectedYear] = React.useState(currentBusinessDate.slice(0, 4));
   const taxYear = Number(selectedYear);
   const annualHostExpenses = expenses.filter((item) => item.ownerType === "host" && item.hostId === host.id && item.date.startsWith(selectedYear));
-  const baseAmount = (check: TableCheck) => (settings.payrollBase === "subtotal" ? check.subtotal : tableTotal(check));
-  const withholdingEnabled = settings.withholdingTaxRate > 0;
   const checkDateById = React.useMemo(() => new Map(tableChecks.map((check) => [check.id, check.date])), [tableChecks]);
   const payrollMonths = Array.from({ length: 12 }, (_, index) => `${taxYear}-${String(index + 1).padStart(2, "0")}`);
   const monthlyPayrollRows = payrollMonths.map((month) => {
     const monthChecks = tableChecks.filter((check) => check.hostId === host.id && check.date.startsWith(month));
     const sales = monthChecks.reduce((sum, check) => sum + tableTotal(check), 0);
-    const base = monthChecks.reduce((sum, check) => sum + baseAmount(check), 0);
-    const adjustment = payrollAdjustments[host.id] ?? blankPayrollAdjustment();
-    const rate = adjustment.rate ?? settings.payrollRate;
-    const payroll = Math.round(base * (rate / 100));
-    const additionsTotal = adjustment.additions.reduce((sum, item) => sum + item.amount, 0);
-    const supplyTotal = payroll + additionsTotal;
-    const payrollDeduction = receivablesEnabled ? receivables
-      .filter((item) =>
-        item.hostId === host.id &&
-        item.collection === "payrollDeducted" &&
-        receivableBusinessDate(item, checkDateById, month.slice(0, 4)).startsWith(month)
-      )
-      .reduce((sum, item) => sum + item.amount, 0) : 0;
-    const withholdingTax = withholdingEnabled ? Math.round(supplyTotal * (settings.withholdingTaxRate / 100)) : 0;
-    const supplyItems: PayrollItem[] = [
-      { id: -1, label: `歩合支給 ${rate}%`, amount: payroll },
-      ...adjustment.additions
-    ];
-    const deductionItems: PayrollItem[] = [
-      ...adjustment.deductions,
-      ...(payrollDeduction > 0 ? [{ id: -2, label: "給与控除売掛", amount: payrollDeduction }] : []),
-      ...(withholdingTax > 0 ? [{ id: -3, label: "源泉所得税", amount: withholdingTax }] : [])
-    ];
-    const deductionTotal = deductionItems.reduce((sum, item) => sum + item.amount, 0);
+    const row = calculatePayrollStatementRow({
+      host,
+      month,
+      settings,
+      tableChecks,
+      receivables,
+      receivablesEnabled,
+      payrollAdjustments,
+      checkDateById
+    });
     const [, monthNumber] = month.split("-");
     return {
+      row,
       month,
       label: `${Number(monthNumber)}月`,
       sales,
-      base,
-      payroll,
-      withholdingTax,
-      takeHome: supplyTotal - deductionTotal,
-      supplyItems,
-      deductionItems,
-      supplyTotal,
-      deductionTotal
+      base: row.base,
+      payroll: row.salaryBase,
+      withholdingTax: row.withholdingTax,
+      takeHome: row.payable,
+      supplyItems: row.supplyItems,
+      deductionItems: row.deductionItems,
+      supplyTotal: row.supplyTotal,
+      deductionTotal: row.deductionTotal
     };
   });
   const closePayrollModal = () => {
@@ -5678,6 +5763,15 @@ function TaxReturnExpenseView({
                   )}
                 </div>
               </section>
+            </div>
+            <div className="button-row full-button-row">
+              <button className="install-button" type="button" onClick={() => printPayrollStatement(selectedPayrollMonth.row, settings)}>
+                <FileText size={16} />
+                明細PDF
+              </button>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setSelectedPayrollMonth(null)}>
+                閉じる
+              </button>
             </div>
           </article>
         </div>
