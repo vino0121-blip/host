@@ -644,12 +644,18 @@ h3 {
 }
 
 .rank-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  color: inherit;
+  text-align: left;
   justify-content: space-between;
   gap: 10px;
   min-height: 54px;
   padding: 10px;
   border: 1px solid #e4ded3;
   border-radius: 8px;
+  background: #fbfaf7;
 }
 
 .rank-row > span {
@@ -674,51 +680,55 @@ h3 {
   font-size: 12px;
 }
 
-.rank-health-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
+.rank-row b {
+  color: #166534;
 }
 
-.health-chip {
-  display: inline-flex;
+.ranking-modal {
+  width: min(560px, 100%);
+}
+
+.ranking-modal-actions {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ranking-modal-list {
+  display: grid;
+  gap: 5px;
+}
+
+.ranking-modal-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(92px, auto);
   align-items: center;
-  min-height: 20px;
-  border-radius: 999px;
-  padding: 0 7px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+  font-size: 12px;
+}
+
+.ranking-modal-head {
+  min-height: 24px;
+  border-color: transparent;
+  background: transparent;
+  color: #6f6a62;
   font-size: 10px;
-  line-height: 1;
+}
+
+.ranking-modal-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.health-red {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.health-orange {
-  background: #ffedd5;
-  color: #c2410c;
-}
-
-.health-yellow {
-  background: #fef9c3;
-  color: #854d0e;
-}
-
-.health-green {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.health-blue {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.rank-row b {
-  color: #166534;
+.ranking-modal-row b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .task {
@@ -2576,12 +2586,41 @@ button:disabled {
 
 .employee-row {
   grid-template-columns:
-    minmax(150px, 1fr)
-    minmax(120px, 0.8fr)
-    minmax(128px, 0.7fr)
-    minmax(128px, 0.7fr)
+    minmax(180px, 1fr)
+    minmax(112px, 0.45fr)
     auto
     auto;
+  min-height: 40px;
+  padding: 6px;
+}
+
+.employee-main-edit {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.employee-main-edit .number-field {
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 4px;
+}
+
+.employee-main-edit .number-field input {
+  min-height: 30px;
+}
+
+.employee-main-edit p {
+  margin: 0 0 0 42px;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.account-password-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 320px) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .expense-row p,
@@ -3127,6 +3166,20 @@ button:disabled {
   .expense-row,
   .admin-row,
   .employee-row {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-row {
+    gap: 5px;
+    min-height: 0;
+    padding: 5px;
+  }
+
+  .employee-main-edit p {
+    margin-left: 0;
+  }
+
+  .account-password-row {
     grid-template-columns: 1fr;
   }
 
@@ -3939,5 +3992,71 @@ button.expense-category-row:hover,
   :root:not([data-theme="light"]) .health-blue {
     background: rgba(30, 64, 175, 0.34);
     color: #93c5fd;
+  }
+}
+
+:root[data-theme="dark"] .edit-block,
+:root[data-theme="dark"] .checkout-total,
+:root[data-theme="dark"] .tax-inline,
+:root[data-theme="dark"] .auto-receivable-box,
+:root[data-theme="dark"] .payment-balance,
+:root[data-theme="dark"] .ranking-modal-row,
+:root[data-theme="dark"] .ranking-modal-head,
+:root[data-theme="dark"] .ranking-tab,
+:root[data-theme="dark"] .backup-import-label,
+:root[data-theme="dark"] .collapsible-header {
+  border-color: var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+:root[data-theme="dark"] .ranking-modal-head {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .payment-balance.is-even {
+  border-color: rgba(22, 101, 52, 0.42);
+  background: rgba(22, 101, 52, 0.18);
+  color: #86efac;
+}
+
+:root[data-theme="dark"] .payment-balance.is-over {
+  border-color: rgba(153, 27, 27, 0.42);
+  background: rgba(153, 27, 27, 0.22);
+  color: #fca5a5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .edit-block,
+  :root:not([data-theme="light"]) .checkout-total,
+  :root:not([data-theme="light"]) .tax-inline,
+  :root:not([data-theme="light"]) .auto-receivable-box,
+  :root:not([data-theme="light"]) .payment-balance,
+  :root:not([data-theme="light"]) .ranking-modal-row,
+  :root:not([data-theme="light"]) .ranking-modal-head,
+  :root:not([data-theme="light"]) .ranking-tab,
+  :root:not([data-theme="light"]) .backup-import-label,
+  :root:not([data-theme="light"]) .collapsible-header {
+    border-color: var(--border-soft);
+    background: var(--surface-soft);
+    color: var(--text-main);
+  }
+
+  :root:not([data-theme="light"]) .ranking-modal-head {
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  :root:not([data-theme="light"]) .payment-balance.is-even {
+    border-color: rgba(22, 101, 52, 0.42);
+    background: rgba(22, 101, 52, 0.18);
+    color: #86efac;
+  }
+
+  :root:not([data-theme="light"]) .payment-balance.is-over {
+    border-color: rgba(153, 27, 27, 0.42);
+    background: rgba(153, 27, 27, 0.22);
+    color: #fca5a5;
   }
 }

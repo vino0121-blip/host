@@ -2172,7 +2172,6 @@ function App() {
           hosts={displayHosts}
           tableChecks={tableChecks}
           currentBusinessDate={currentBusinessDate}
-          receivablesEnabled={receivablesEnabled}
         />
       )}
 
@@ -3259,13 +3258,11 @@ function SummaryView({
 function RankingsView({
   hosts,
   tableChecks,
-  currentBusinessDate,
-  receivablesEnabled
+  currentBusinessDate
 }: {
   hosts: Host[];
   tableChecks: TableCheck[];
   currentBusinessDate: string;
-  receivablesEnabled: boolean;
 }) {
   const monthOptions = React.useMemo(() => {
     const months = Array.from(new Set([currentBusinessDate.slice(0, 7), ...tableChecks.map((check) => check.date.slice(0, 7))]));
@@ -3278,34 +3275,36 @@ function RankingsView({
       });
   }, [currentBusinessDate, tableChecks]);
   const [selectedMonth, setSelectedMonth] = React.useState(currentBusinessDate.slice(0, 7));
+  const [rankingModal, setRankingModal] = React.useState<"sales" | "groups" | null>(null);
+  const [copyNotice, setCopyNotice] = React.useState("");
   const monthChecks = tableChecks.filter((check) => check.date.startsWith(selectedMonth));
   const rankingRows = hosts.map((host) => {
     const hostChecks = monthChecks.filter((check) => check.hostId === host.id);
     const sales = hostChecks.reduce((sum, check) => sum + tableTotal(check), 0);
-    const receivable = receivablesEnabled ? hostChecks.reduce((sum, check) => sum + check.receivableAmount, 0) : 0;
     const groups = hostChecks.length;
-    const salesRate = host.target > 0 ? Math.round((sales / host.target) * 100) : 0;
-    const receivableRate = sales > 0 ? Math.round((receivable / sales) * 100) : 0;
-    return { host, sales, receivable, groups, salesRate, receivableRate };
+    return { host, sales, groups };
   });
   const salesRows = [...rankingRows].sort((a, b) => b.sales - a.sales || b.groups - a.groups || a.host.rank - b.host.rank);
   const groupRows = [...rankingRows].sort((a, b) => b.groups - a.groups || b.sales - a.sales || a.host.rank - b.host.rank);
-  const salesTone = (rate: number) => (rate >= 100 ? "blue" : rate >= 80 ? "green" : rate >= 60 ? "yellow" : rate >= 40 ? "orange" : "red");
-  const receivableTone = (rate: number) => (rate <= 5 ? "blue" : rate <= 10 ? "green" : rate <= 20 ? "yellow" : rate <= 35 ? "orange" : "red");
+  const modalRows = rankingModal === "groups" ? groupRows : salesRows;
+  const rankingValue = (row: (typeof rankingRows)[number], mode: "sales" | "groups") =>
+    mode === "sales" ? yenMoney(row.sales) : `${row.groups}組`;
+  const copyTop10 = async (mode: "sales" | "groups") => {
+    const rows = (mode === "sales" ? salesRows : groupRows).slice(0, 10);
+    const text = rows.map((row, index) => `${index + 1}位 ${row.host.name} ${rankingValue(row, mode)}`).join("\n");
+    await navigator.clipboard?.writeText(text);
+    setCopyNotice("10位までコピーしました");
+  };
 
   const renderRow = (row: (typeof rankingRows)[number], index: number, mode: "sales" | "groups") => (
-    <div className="rank-row" key={`${mode}-${row.host.id}`}>
+    <button className="rank-row selectable-row" type="button" key={`${mode}-${row.host.id}`} onClick={() => setRankingModal(mode)}>
       <span>{index + 1}</span>
       <div>
         <strong>{row.host.name}</strong>
         <p>{yenMoney(row.sales)} / {row.groups}組 / 目標 {yenMoney(row.host.target)}</p>
-        <div className="rank-health-row">
-          <small className={`health-chip health-${salesTone(row.salesRate)}`}>売上 {row.salesRate}%</small>
-          {receivablesEnabled && <small className={`health-chip health-${receivableTone(row.receivableRate)}`}>売掛 {row.receivableRate}%</small>}
-        </div>
       </div>
       <b>{mode === "sales" ? yenMoney(row.sales) : `${row.groups}組`}</b>
-    </div>
+    </button>
   );
 
   return (
@@ -3324,7 +3323,6 @@ function RankingsView({
       <article className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">左</p>
             <h3>売上順位</h3>
           </div>
           <Trophy size={22} />
@@ -3337,7 +3335,6 @@ function RankingsView({
       <article className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">右</p>
             <h3>組数順位</h3>
           </div>
           <Users size={22} />
@@ -3346,6 +3343,43 @@ function RankingsView({
           {groupRows.map((row, index) => renderRow(row, index, "groups"))}
         </div>
       </article>
+
+      {rankingModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="ランキング一覧">
+          <article className="panel checkout-modal ranking-modal">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">{selectedMonth}</p>
+                <h3>{rankingModal === "sales" ? "売上順位" : "組数順位"}</h3>
+              </div>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setRankingModal(null)}>
+                閉じる
+              </button>
+            </div>
+            <div className="button-row ranking-modal-actions">
+              <button className="icon-text-button" type="button" onClick={() => copyTop10(rankingModal)}>
+                <Download size={14} />
+                10位までコピー
+              </button>
+              {copyNotice && <span className="status-pill status-ok">{copyNotice}</span>}
+            </div>
+            <div className="ranking-modal-list">
+              <div className="ranking-modal-row ranking-modal-head">
+                <span>順位</span>
+                <span>名前</span>
+                <span>金額</span>
+              </div>
+              {modalRows.map((row, index) => (
+                <div className="ranking-modal-row" key={row.host.id}>
+                  <span>{index + 1}</span>
+                  <strong>{row.host.name}</strong>
+                  <b>{rankingValue(row, rankingModal)}</b>
+                </div>
+              ))}
+            </div>
+          </article>
+        </div>
+      )}
     </section>
   );
 }
@@ -4530,8 +4564,10 @@ function EmployeePanel({
           <div className="employee-row" key={user.id}>
             {canManage ? (
               <>
-                <TextField label="名前" value={user.name} onChange={(name) => onUpdateUser(user.id, { name })} />
-                <TextField label="ID" value={user.loginId} onChange={(loginId) => onUpdateUser(user.id, { loginId })} />
+                <div className="employee-main-edit">
+                  <TextField label="名前" value={user.name} onChange={(name) => onUpdateUser(user.id, { name })} />
+                  <p>ID: {user.loginId}</p>
+                </div>
                 <SelectField
                   label="権限"
                   value={user.role}
@@ -4542,7 +4578,6 @@ function EmployeePanel({
                   ]}
                   onChange={(role) => onUpdateUser(user.id, { role: role as Role })}
                 />
-                <TextField label="パスワード" value={user.password} onChange={(password) => onUpdateUser(user.id, { password })} />
                 <button className={user.active ? "icon-text-button" : "icon-text-button ghost-button"} type="button" onClick={() => onUpdateUser(user.id, { active: !user.active })}>
                   {user.active ? "有効" : "停止中"}
                 </button>
@@ -6294,6 +6329,14 @@ function ManagementView({
             )}
           </div>
         )}
+        <div className="account-password-row">
+          <TextField
+            label="自分のパスワード"
+            value={currentUser.password}
+            onChange={(password) => onUpdateUser(currentUser.id, { password })}
+          />
+          <p className="tax-note">従業員一覧ではパスワードを編集せず、本人がここで変更します。</p>
+        </div>
         <p className="tax-note">{notice}</p>
       </CollapsiblePanel>
 
