@@ -4566,24 +4566,21 @@ function EmployeePanel({
               <>
                 <div className="employee-main-edit">
                   <TextField label="名前" value={user.name} onChange={(name) => onUpdateUser(user.id, { name })} />
-                  <p>ID: {user.loginId}</p>
+                  <TextField label="ID" value={user.loginId} onChange={(loginId) => onUpdateUser(user.id, { loginId })} />
                 </div>
-                <SelectField
-                  label="権限"
-                  value={user.role}
-                  options={[
-                    { label: "店長", value: "admin" },
-                    { label: "内勤", value: "staff" },
-                    { label: "ホスト", value: "host" }
-                  ]}
-                  onChange={(role) => onUpdateUser(user.id, { role: role as Role })}
-                />
-                <button className={user.active ? "icon-text-button" : "icon-text-button ghost-button"} type="button" onClick={() => onUpdateUser(user.id, { active: !user.active })}>
-                  {user.active ? "有効" : "停止中"}
-                </button>
-                <button className="icon-button danger-button" type="button" aria-label="従業員削除" onClick={() => onDeleteUser(user.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <div className="employee-mini-controls">
+                  <select value={user.role} aria-label="権限" onChange={(event) => onUpdateUser(user.id, { role: event.target.value as Role })}>
+                    <option value="admin">店長</option>
+                    <option value="staff">内勤</option>
+                    <option value="host">ホスト</option>
+                  </select>
+                  <button className={user.active ? "employee-state-button is-active" : "employee-state-button"} type="button" onClick={() => onUpdateUser(user.id, { active: !user.active })}>
+                    {user.active ? "有効" : "停止"}
+                  </button>
+                  <button className="icon-button danger-button employee-delete-button" type="button" aria-label="従業員削除" onClick={() => onDeleteUser(user.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </>
             ) : (
               <>
