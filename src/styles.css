@@ -3558,3 +3558,277 @@ b,
 .expense-modal-row .expense-amount-cell b {
   font-weight: 400;
 }
+
+:root {
+  color-scheme: light;
+  --app-bg: #f6f4ef;
+  --app-bg-top: #ffffff;
+  --surface: #ffffff;
+  --surface-soft: #fbfaf7;
+  --surface-muted: #f3f4f6;
+  --surface-warm: #fffdf8;
+  --text-main: #151515;
+  --text-strong: #111827;
+  --text-muted: #6f6a62;
+  --text-soft: #7a7165;
+  --border: #ded8cd;
+  --border-soft: #e4ded3;
+  --border-strong: #d6d0c5;
+  --shadow: rgba(33, 31, 28, 0.1);
+  --shadow-soft: rgba(33, 31, 28, 0.06);
+  --primary: #111827;
+  --primary-text: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --app-bg: #0f1115;
+    --app-bg-top: #171a20;
+    --surface: #171a20;
+    --surface-soft: #1f232b;
+    --surface-muted: #252a33;
+    --surface-warm: #20242b;
+    --text-main: #e8e4dc;
+    --text-strong: #f7f3ea;
+    --text-muted: #aaa296;
+    --text-soft: #918a80;
+    --border: #343944;
+    --border-soft: #2e333d;
+    --border-strong: #444a56;
+    --shadow: rgba(0, 0, 0, 0.34);
+    --shadow-soft: rgba(0, 0, 0, 0.24);
+    --primary: #f7f3ea;
+    --primary-text: #111318;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #0f1115;
+  --app-bg-top: #171a20;
+  --surface: #171a20;
+  --surface-soft: #1f232b;
+  --surface-muted: #252a33;
+  --surface-warm: #20242b;
+  --text-main: #e8e4dc;
+  --text-strong: #f7f3ea;
+  --text-muted: #aaa296;
+  --text-soft: #918a80;
+  --border: #343944;
+  --border-soft: #2e333d;
+  --border-strong: #444a56;
+  --shadow: rgba(0, 0, 0, 0.34);
+  --shadow-soft: rgba(0, 0, 0, 0.24);
+  --primary: #f7f3ea;
+  --primary-text: #111318;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+html,
+:root {
+  color: var(--text-main);
+  background: var(--app-bg);
+}
+
+body {
+  background:
+    linear-gradient(180deg, var(--app-bg-top) 0, var(--app-bg) 260px),
+    var(--app-bg);
+  color: var(--text-main);
+}
+
+.login-panel,
+.summary-band,
+.panel,
+.metric,
+.tabs,
+.modal-backdrop .panel,
+.account-footer,
+.collapsible-panel,
+.closing-history-inline,
+.tax-return-year-panel,
+.tax-return-payroll-panel {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-main);
+  box-shadow: 0 10px 24px var(--shadow-soft);
+}
+
+.login-card,
+.rank-row,
+.task,
+.receivable-row,
+.result-lines div,
+.customer-sales-row,
+.customer-history-row,
+.customer-management-row,
+.customer-card-box,
+.customer-bottle-mini,
+.customer-profile-editor-row,
+.host-action-row,
+.host-action-empty,
+.action-row,
+.bottle-row,
+.expense-category-row,
+.expense-modal-row,
+.payroll-breakdown-box,
+.payroll-item-row,
+.table-check-row,
+.open-table-row,
+.expense-row,
+.admin-row,
+.employee-row,
+.rule-list,
+.expense-guide-row,
+.operation-log-row,
+.device-session-row,
+.host-customer-memo-row,
+.plain-note,
+.compact-note {
+  border-color: var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-main);
+}
+
+.customer-history-head,
+.customer-management-head,
+.expense-modal-head,
+.payroll-row.payroll-head,
+.summary-table-head,
+.operation-log-head,
+.table-check-head,
+.open-table-head {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.eyebrow,
+.top-store-name,
+.login-copy,
+.login-card span,
+.login-card small,
+.metric p,
+.task span,
+.task p,
+.receivable-row p,
+.receivable-row small,
+.tax-note,
+.expense-guide-note,
+.expense-guide-row small,
+.expense-row p,
+.admin-row p,
+.employee-row p,
+.host-action-row small,
+.device-session-row small,
+.host-customer-memo-summary small,
+.customer-bottle-mini small,
+.customer-card-lines p,
+.customer-card-lines small,
+.compact-note p,
+.plain-note p {
+  color: var(--text-muted);
+}
+
+.install-button,
+.icon-text-button,
+.tab.is-active,
+.save-button,
+.time-now-button {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.ghost-button,
+.icon-button,
+.host-action-more,
+.search-shell,
+.number-field input,
+.number-field select,
+.number-field textarea,
+.payroll-item-input,
+.receivable-kind-select,
+.receivable-memo-field input,
+.open-inline-field input,
+.open-inline-field select {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text-main);
+}
+
+.tab {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.tabs {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+button.expense-category-row:hover,
+.selectable-modal-row:hover,
+.selectable-row:hover,
+.payroll-action-row:hover,
+.table-check-row:hover,
+.customer-management-row:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.status-pill {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+}
+
+.status-ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-danger,
+.status-red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+:root[data-theme="dark"] .status-ok {
+  background: rgba(22, 101, 52, 0.28);
+  color: #86efac;
+}
+
+:root[data-theme="dark"] .status-warn {
+  background: rgba(146, 64, 14, 0.32);
+  color: #fdba74;
+}
+
+:root[data-theme="dark"] .status-danger,
+:root[data-theme="dark"] .status-red {
+  background: rgba(153, 27, 27, 0.32);
+  color: #fca5a5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .status-ok {
+    background: rgba(22, 101, 52, 0.28);
+    color: #86efac;
+  }
+
+  :root:not([data-theme="light"]) .status-warn {
+    background: rgba(146, 64, 14, 0.32);
+    color: #fdba74;
+  }
+
+  :root:not([data-theme="light"]) .status-danger,
+  :root:not([data-theme="light"]) .status-red {
+    background: rgba(153, 27, 27, 0.32);
+    color: #fca5a5;
+  }
+}

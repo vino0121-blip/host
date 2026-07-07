@@ -257,6 +257,7 @@ type StoreSettings = {
   payrollBase: "subtotal" | "total";
   withholdingTaxRate: 0 | 10.21;
   receivablesEnabled: boolean;
+  themeMode: "system" | "light" | "dark";
 };
 
 type InstallPromptEvent = Event & {
@@ -909,7 +910,8 @@ const defaultStoreSettings: StoreSettings = {
   payrollRate: 48,
   payrollBase: "total",
   withholdingTaxRate: 0,
-  receivablesEnabled: true
+  receivablesEnabled: true,
+  themeMode: "system"
 };
 
 const formatDate = (date: Date) =>
@@ -1111,7 +1113,8 @@ const normalizeStoreSettings = (settings: StoreSettings) => ({
   ...defaultStoreSettings,
   ...(settings ?? {}),
   withholdingTaxRate: settings?.withholdingTaxRate === 10.21 ? 10.21 : 0,
-  receivablesEnabled: settings?.receivablesEnabled ?? true
+  receivablesEnabled: settings?.receivablesEnabled ?? true,
+  themeMode: settings?.themeMode === "dark" || settings?.themeMode === "light" ? settings.themeMode : "system"
 });
 const asArray = <T,>(value: unknown, fallback: T[]) => (Array.isArray(value) ? (value as T[]) : fallback);
 
@@ -1187,6 +1190,10 @@ function App() {
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     return () => window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
   }, []);
+
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = storeSettings.themeMode;
+  }, [storeSettings.themeMode]);
 
   React.useEffect(() => {
     if (currentUser) return;
@@ -3336,7 +3343,6 @@ function PayrollView({
        <h2>内訳</h2><table><tbody>
         <tr><th>計算元</th><td>${settings.payrollBase === "subtotal" ? "小計" : "総計"}</td></tr>
         <tr><th>歩合率</th><td>${row.rate}%</td></tr>
-        <tr><th>未回収売掛</th><td>${yenMoney(row.uncollectedReceivable)}</td></tr>
         <tr><th>控除合計</th><td>-${yenMoney(row.deductionTotal)}</td></tr>
        </tbody></table>`
     );
@@ -6028,6 +6034,16 @@ function ManagementView({
                 { label: "OFF", value: "off" }
               ]}
               onChange={(value) => onUpdateSettings({ ...settings, receivablesEnabled: value === "on" })}
+            />
+            <SelectField
+              label="表示"
+              value={settings.themeMode}
+              options={[
+                { label: "システム", value: "system" },
+                { label: "ライト", value: "light" },
+                { label: "ダーク", value: "dark" }
+              ]}
+              onChange={(themeMode) => onUpdateSettings({ ...settings, themeMode: themeMode as StoreSettings["themeMode"] })}
             />
           </div>
           <div className="plain-note">
