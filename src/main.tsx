@@ -4566,7 +4566,6 @@ function EmployeePanel({
               <>
                 <div className="employee-main-edit">
                   <TextField label="名前" value={user.name} onChange={(name) => onUpdateUser(user.id, { name })} />
-                  <TextField label="ID" value={user.loginId} onChange={(loginId) => onUpdateUser(user.id, { loginId })} />
                 </div>
                 <div className="employee-mini-controls">
                   <select value={user.role} aria-label="権限" onChange={(event) => onUpdateUser(user.id, { role: event.target.value as Role })}>
@@ -4575,7 +4574,7 @@ function EmployeePanel({
                     <option value="host">ホスト</option>
                   </select>
                   <button className={user.active ? "employee-state-button is-active" : "employee-state-button"} type="button" onClick={() => onUpdateUser(user.id, { active: !user.active })}>
-                    {user.active ? "有効" : "停止"}
+                    {user.active ? "ログイン可" : "停止"}
                   </button>
                   <button className="icon-button danger-button employee-delete-button" type="button" aria-label="従業員削除" onClick={() => onDeleteUser(user.id)}>
                     <Trash2 size={14} />
