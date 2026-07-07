@@ -1835,6 +1835,13 @@ button.expense-category-row:hover {
   font-size: 12px;
 }
 
+.receivable-due {
+  color: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .receivable-money-line {
   justify-content: space-between;
 }
@@ -1909,6 +1916,25 @@ button.expense-category-row:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:root[data-theme="dark"] .receivable-main-line span,
+:root[data-theme="dark"] .receivable-main-line small,
+:root[data-theme="dark"] .receivable-memo-field span,
+:root[data-theme="dark"] .collapsible-header-actions,
+:root[data-theme="dark"] .collapsible-state {
+  color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .collapsible-state,
+:root[data-theme="dark"] .receivable-memo-text {
+  border-color: var(--border-soft);
+  background: var(--surface-muted);
+}
+
+:root[data-theme="dark"] .metric-icon {
+  background: var(--surface-muted);
+  color: var(--text-main);
 }
 
 .receivable-payment-box {
@@ -2616,7 +2642,7 @@ button:disabled {
 
 .employee-mini-controls {
   display: grid;
-  grid-template-columns: 64px 64px 28px;
+  grid-template-columns: 72px 28px;
   align-items: center;
   gap: 4px;
 }
@@ -2630,22 +2656,6 @@ button:disabled {
   color: #151515;
   padding: 0 20px 0 7px;
   font-size: 11px;
-}
-
-.employee-state-button {
-  min-height: 28px;
-  border: 1px solid #e4ded3;
-  border-radius: 8px;
-  background: #fbfaf7;
-  color: #7a7165;
-  padding: 0 4px;
-  font-size: 10px;
-}
-
-.employee-state-button.is-active {
-  border-color: #bbf7d0;
-  background: #dcfce7;
-  color: #166534;
 }
 
 .employee-delete-button {
@@ -3219,7 +3229,7 @@ button:disabled {
   }
 
   .employee-mini-controls {
-    grid-template-columns: 72px 64px 30px;
+    grid-template-columns: 76px 30px;
     justify-content: end;
   }
 
@@ -3754,8 +3764,8 @@ b,
     --border-strong: #444a56;
     --shadow: rgba(0, 0, 0, 0.34);
     --shadow-soft: rgba(0, 0, 0, 0.24);
-    --primary: #f7f3ea;
-    --primary-text: #111318;
+    --primary: #2f3744;
+    --primary-text: #f7f3ea;
   }
 }
 
@@ -3776,8 +3786,8 @@ b,
   --border-strong: #444a56;
   --shadow: rgba(0, 0, 0, 0.34);
   --shadow-soft: rgba(0, 0, 0, 0.24);
-  --primary: #f7f3ea;
-  --primary-text: #111318;
+  --primary: #2f3744;
+  --primary-text: #f7f3ea;
 }
 
 :root[data-theme="light"] {
@@ -3829,10 +3839,12 @@ body {
 .host-action-empty,
 .action-row,
 .bottle-row,
+.daily-summary-row,
 .expense-category-row,
 .expense-modal-row,
 .payroll-breakdown-box,
 .payroll-item-row,
+.payroll-row,
 .table-check-row,
 .open-table-row,
 .expense-row,
@@ -3889,6 +3901,21 @@ body {
   color: var(--text-muted);
 }
 
+.expense-category-row span,
+.expense-category-row b,
+.daily-summary-row span,
+.daily-summary-row strong,
+.daily-summary-row b,
+.payroll-row b {
+  color: inherit;
+}
+
+.open-inline-field span,
+.inline-table-time,
+.payroll-name-button {
+  color: inherit;
+}
+
 .install-button,
 .icon-text-button,
 .tab.is-active,
@@ -3902,6 +3929,7 @@ body {
 .icon-button,
 .host-action-more,
 .search-shell,
+.search-shell input,
 .number-field input,
 .number-field select,
 .number-field textarea,
@@ -4048,13 +4076,16 @@ button.expense-category-row:hover,
 :root[data-theme="dark"] .ranking-modal-head,
 :root[data-theme="dark"] .ranking-tab,
 :root[data-theme="dark"] .backup-import-label,
-:root[data-theme="dark"] .collapsible-header {
+:root[data-theme="dark"] .collapsible-header,
+:root[data-theme="dark"] .daily-summary-row,
+:root[data-theme="dark"] .expense-category-row {
   border-color: var(--border-soft);
   background: var(--surface-soft);
   color: var(--text-main);
 }
 
-:root[data-theme="dark"] .ranking-modal-head {
+:root[data-theme="dark"] .ranking-modal-head,
+:root[data-theme="dark"] .daily-summary-head {
   background: transparent;
   color: var(--text-muted);
 }
@@ -4071,17 +4102,10 @@ button.expense-category-row:hover,
   color: #fca5a5;
 }
 
-:root[data-theme="dark"] .employee-mini-controls select,
-:root[data-theme="dark"] .employee-state-button {
+:root[data-theme="dark"] .employee-mini-controls select {
   border-color: var(--border-strong);
   background: var(--surface);
   color: var(--text-main);
-}
-
-:root[data-theme="dark"] .employee-state-button.is-active {
-  border-color: rgba(22, 101, 52, 0.42);
-  background: rgba(22, 101, 52, 0.22);
-  color: #86efac;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -4094,13 +4118,16 @@ button.expense-category-row:hover,
   :root:not([data-theme="light"]) .ranking-modal-head,
   :root:not([data-theme="light"]) .ranking-tab,
   :root:not([data-theme="light"]) .backup-import-label,
-  :root:not([data-theme="light"]) .collapsible-header {
+  :root:not([data-theme="light"]) .collapsible-header,
+  :root:not([data-theme="light"]) .daily-summary-row,
+  :root:not([data-theme="light"]) .expense-category-row {
     border-color: var(--border-soft);
     background: var(--surface-soft);
     color: var(--text-main);
   }
 
-  :root:not([data-theme="light"]) .ranking-modal-head {
+  :root:not([data-theme="light"]) .ranking-modal-head,
+  :root:not([data-theme="light"]) .daily-summary-head {
     background: transparent;
     color: var(--text-muted);
   }
@@ -4117,16 +4144,9 @@ button.expense-category-row:hover,
     color: #fca5a5;
   }
 
-  :root:not([data-theme="light"]) .employee-mini-controls select,
-  :root:not([data-theme="light"]) .employee-state-button {
+  :root:not([data-theme="light"]) .employee-mini-controls select {
     border-color: var(--border-strong);
     background: var(--surface);
     color: var(--text-main);
-  }
-
-  :root:not([data-theme="light"]) .employee-state-button.is-active {
-    border-color: rgba(22, 101, 52, 0.42);
-    background: rgba(22, 101, 52, 0.22);
-    color: #86efac;
   }
 }

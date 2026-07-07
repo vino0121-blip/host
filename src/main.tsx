@@ -4573,9 +4573,6 @@ function EmployeePanel({
                     <option value="staff">内勤</option>
                     <option value="host">ホスト</option>
                   </select>
-                  <button className={user.active ? "employee-state-button is-active" : "employee-state-button"} type="button" onClick={() => onUpdateUser(user.id, { active: !user.active })}>
-                    {user.active ? "ログイン可" : "停止"}
-                  </button>
                   <button className="icon-button danger-button employee-delete-button" type="button" aria-label="従業員削除" onClick={() => onDeleteUser(user.id)}>
                     <Trash2 size={14} />
                   </button>
@@ -4585,10 +4582,8 @@ function EmployeePanel({
               <>
                 <div>
                   <strong>{user.name}</strong>
-                  <p>ID: {user.loginId}</p>
                 </div>
                 <span className="status-pill status-ok">{roleLabel[user.role]}</span>
-                <span className={user.active ? "status-pill status-ok" : "status-pill status-danger"}>{user.active ? "有効" : "停止中"}</span>
               </>
             )}
           </div>
@@ -4702,7 +4697,7 @@ function ReceivablesView({
                   <span>{hostName(item.hostId)}</span>
                   <small>→</small>
                   <strong>{item.customer}</strong>
-                  <span className={`status-pill status-${item.status}`}>{item.due}</span>
+                  <span className="receivable-due">{item.due}</span>
                   {currentUser.role === "host" ? (
                     <span className={item.collection === "payrollDeducted" ? "status-pill status-danger" : "status-pill status-warn"}>
                       {item.collection === "payrollDeducted" ? "給与控除済" : "通常"}
@@ -6238,16 +6233,6 @@ function ManagementView({
               <strong>会計入力ではここを自動使用</strong>
               <p>営業時間をまたぐ営業日は、終了時刻前なら前日扱いで会計日付を付けます。</p>
             </div>
-          </div>
-        </CollapsiblePanel>
-      )}
-
-      {canEditStoreSettings && settings.receivablesEnabled && (
-        <CollapsiblePanel eyebrow="売掛" title="確認ルール" icon={ClipboardList} className="management-rules-panel">
-          <div className="rule-list">
-            <p><b>赤</b> 期限切れ・本日中に店長確認</p>
-            <p><b>黄</b> 3日以内・担当から連絡</p>
-            <p><b>緑</b> 入金予定あり・メモ更新</p>
           </div>
         </CollapsiblePanel>
       )}
