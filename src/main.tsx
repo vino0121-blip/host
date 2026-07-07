@@ -272,6 +272,8 @@ type StoreSettings = {
   taxRate: number;
   openHour: number;
   closeHour: number;
+  checkoutMainSubtotal: number;
+  checkoutVipSubtotal: number;
   payrollRate: number;
   payrollBase: "subtotal" | "total";
   withholdingTaxRate: 0 | 10.21;
@@ -1031,6 +1033,8 @@ const defaultStoreSettings: StoreSettings = {
   taxRate: 10,
   openHour: 20,
   closeHour: 5,
+  checkoutMainSubtotal: 120000,
+  checkoutVipSubtotal: 200000,
   payrollRate: 48,
   payrollBase: "total",
   withholdingTaxRate: 0,
@@ -1088,24 +1092,27 @@ const receivableFromCheck = (check: TableCheck): Receivable => ({
   memo: `${check.table} 会計から自動反映`
 });
 
-const blankCheck = (hostId: number, settings: StoreSettings = defaultStoreSettings): TableCheck => ({
-  id: 0,
-  table: "C-1",
-  customerName: "名前未入力",
-  hostId,
-  guests: 2,
-  subtotal: 120000,
-  serviceRate: settings.serviceRate,
-  taxRate: settings.taxRate,
-  discount: 0,
-  payment: "カード",
-  cashAmount: 0,
-  cardAmount: 158400,
-  receivableAmount: 0,
-  status: "paid",
-  date: businessDateFor(settings),
-  time: currentTime()
-});
+const blankCheck = (hostId: number, settings: StoreSettings = defaultStoreSettings): TableCheck => {
+  const baseCheck: TableCheck = {
+    id: 0,
+    table: "C-1",
+    customerName: "名前未入力",
+    hostId,
+    guests: 2,
+    subtotal: settings.checkoutMainSubtotal,
+    serviceRate: settings.serviceRate,
+    taxRate: settings.taxRate,
+    discount: 0,
+    payment: "カード",
+    cashAmount: 0,
+    cardAmount: 0,
+    receivableAmount: 0,
+    status: "paid",
+    date: businessDateFor(settings),
+    time: currentTime()
+  };
+  return { ...baseCheck, cardAmount: tableTotal(baseCheck) };
+};
 
 const blankExpense = (hostId: number, ownerType: Expense["ownerType"] = "store"): Expense => ({
   id: 0,
@@ -1236,6 +1243,8 @@ const normalizePayrollAdjustments = (items: Record<number, PayrollAdjustment>) =
 const normalizeStoreSettings = (settings: StoreSettings) => ({
   ...defaultStoreSettings,
   ...(settings ?? {}),
+  checkoutMainSubtotal: Math.max(0, Number(settings?.checkoutMainSubtotal ?? defaultStoreSettings.checkoutMainSubtotal) || 0),
+  checkoutVipSubtotal: Math.max(0, Number(settings?.checkoutVipSubtotal ?? defaultStoreSettings.checkoutVipSubtotal) || 0),
   withholdingTaxRate: settings?.withholdingTaxRate === 10.21 ? 10.21 : 0,
   receivablesEnabled: settings?.receivablesEnabled ?? true,
   themeMode: settings?.themeMode === "dark" || settings?.themeMode === "light" ? settings.themeMode : "system"
@@ -2163,6 +2172,7 @@ function App() {
           hosts={displayHosts}
           tableChecks={tableChecks}
           currentBusinessDate={currentBusinessDate}
+          receivablesEnabled={receivablesEnabled}
         />
       )}
 
@@ -3249,11 +3259,13 @@ function SummaryView({
 function RankingsView({
   hosts,
   tableChecks,
-  currentBusinessDate
+  currentBusinessDate,
+  receivablesEnabled
 }: {
   hosts: Host[];
   tableChecks: TableCheck[];
   currentBusinessDate: string;
+  receivablesEnabled: boolean;
 }) {
   const monthOptions = React.useMemo(() => {
     const months = Array.from(new Set([currentBusinessDate.slice(0, 7), ...tableChecks.map((check) => check.date.slice(0, 7))]));
@@ -3270,11 +3282,16 @@ function RankingsView({
   const rankingRows = hosts.map((host) => {
     const hostChecks = monthChecks.filter((check) => check.hostId === host.id);
     const sales = hostChecks.reduce((sum, check) => sum + tableTotal(check), 0);
+    const receivable = receivablesEnabled ? hostChecks.reduce((sum, check) => sum + check.receivableAmount, 0) : 0;
     const groups = hostChecks.length;
-    return { host, sales, groups };
+    const salesRate = host.target > 0 ? Math.round((sales / host.target) * 100) : 0;
+    const receivableRate = sales > 0 ? Math.round((receivable / sales) * 100) : 0;
+    return { host, sales, receivable, groups, salesRate, receivableRate };
   });
   const salesRows = [...rankingRows].sort((a, b) => b.sales - a.sales || b.groups - a.groups || a.host.rank - b.host.rank);
   const groupRows = [...rankingRows].sort((a, b) => b.groups - a.groups || b.sales - a.sales || a.host.rank - b.host.rank);
+  const salesTone = (rate: number) => (rate >= 100 ? "blue" : rate >= 80 ? "green" : rate >= 60 ? "yellow" : rate >= 40 ? "orange" : "red");
+  const receivableTone = (rate: number) => (rate <= 5 ? "blue" : rate <= 10 ? "green" : rate <= 20 ? "yellow" : rate <= 35 ? "orange" : "red");
 
   const renderRow = (row: (typeof rankingRows)[number], index: number, mode: "sales" | "groups") => (
     <div className="rank-row" key={`${mode}-${row.host.id}`}>
@@ -3282,6 +3299,10 @@ function RankingsView({
       <div>
         <strong>{row.host.name}</strong>
         <p>{yenMoney(row.sales)} / {row.groups}組 / 目標 {yenMoney(row.host.target)}</p>
+        <div className="rank-health-row">
+          <small className={`health-chip health-${salesTone(row.salesRate)}`}>売上 {row.salesRate}%</small>
+          {receivablesEnabled && <small className={`health-chip health-${receivableTone(row.receivableRate)}`}>売掛 {row.receivableRate}%</small>}
+        </div>
       </div>
       <b>{mode === "sales" ? yenMoney(row.sales) : `${row.groups}組`}</b>
     </div>
@@ -4109,6 +4130,23 @@ function CheckoutEditorModal({
     0
   ) : 0;
   const updateDraft = (patch: Partial<TableCheck>) => onChangeDraft({ ...draftCheck, ...patch });
+  const applyCheckoutPattern = (subtotal: number) => {
+    const nextBase = withAutoReceivable({ ...draftCheck, subtotal }, storeSettings);
+    const nextTotal = tableTotal(nextBase);
+    if (nextBase.payment === "現金") {
+      onChangeDraft({ ...nextBase, cashAmount: nextTotal, cardAmount: 0, receivableAmount: 0 });
+      return;
+    }
+    if (nextBase.payment === "カード") {
+      onChangeDraft({ ...nextBase, cashAmount: 0, cardAmount: nextTotal, receivableAmount: 0 });
+      return;
+    }
+    if (receivablesEnabled && nextBase.payment === "売掛") {
+      onChangeDraft({ ...nextBase, cashAmount: 0, cardAmount: 0, receivableAmount: nextTotal });
+      return;
+    }
+    onChangeDraft(nextBase);
+  };
   const applyPaymentPreset = (payment: Payment) => {
     if (payment === "現金") {
       onChangeDraft({ ...draftCheck, payment, cashAmount: total, cardAmount: 0, receivableAmount: 0 });
@@ -4158,6 +4196,15 @@ function CheckoutEditorModal({
             <b>{money(taxTotal)}</b>
           </div>
           <NumberField label="値引き" value={draftCheck.discount} min={0} step={1} onChange={(discount) => updateDraft({ discount })} />
+        </div>
+
+        <div className="checkout-pattern-row">
+          <button className="icon-text-button ghost-button" type="button" onClick={() => applyCheckoutPattern(storeSettings.checkoutMainSubtotal)}>
+            メイン {money(storeSettings.checkoutMainSubtotal)}
+          </button>
+          <button className="icon-text-button ghost-button" type="button" onClick={() => applyCheckoutPattern(storeSettings.checkoutVipSubtotal)}>
+            VIP {money(storeSettings.checkoutVipSubtotal)}
+          </button>
         </div>
 
         <div className="form-grid checkout-form payment-split">
@@ -6093,6 +6140,20 @@ function ManagementView({
               max={23}
               step={1}
               onChange={(closeHour) => onUpdateSettings({ ...settings, closeHour })}
+            />
+            <NumberField
+              label="メイン小計"
+              value={settings.checkoutMainSubtotal}
+              min={0}
+              step={1000}
+              onChange={(checkoutMainSubtotal) => onUpdateSettings({ ...settings, checkoutMainSubtotal })}
+            />
+            <NumberField
+              label="VIP小計"
+              value={settings.checkoutVipSubtotal}
+              min={0}
+              step={1000}
+              onChange={(checkoutVipSubtotal) => onUpdateSettings({ ...settings, checkoutVipSubtotal })}
             />
             <NumberField
               label="給与歩合 %"

@@ -674,6 +674,49 @@ h3 {
   font-size: 12px;
 }
 
+.rank-health-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.health-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.health-red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.health-orange {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.health-yellow {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.health-green {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.health-blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .rank-row b {
   color: #166534;
 }
@@ -1947,6 +1990,22 @@ button.expense-category-row:hover {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid #e4ded3;
+}
+
+.checkout-pattern-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.checkout-pattern-row .icon-text-button {
+  justify-content: center;
+  min-width: 0;
+  min-height: 32px;
+  padding-inline: 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .payment-balance {
@@ -3815,6 +3874,31 @@ button.expense-category-row:hover,
   color: #fca5a5;
 }
 
+:root[data-theme="dark"] .health-red {
+  background: rgba(153, 27, 27, 0.32);
+  color: #fca5a5;
+}
+
+:root[data-theme="dark"] .health-orange {
+  background: rgba(154, 52, 18, 0.34);
+  color: #fdba74;
+}
+
+:root[data-theme="dark"] .health-yellow {
+  background: rgba(133, 77, 14, 0.34);
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .health-green {
+  background: rgba(22, 101, 52, 0.28);
+  color: #86efac;
+}
+
+:root[data-theme="dark"] .health-blue {
+  background: rgba(30, 64, 175, 0.34);
+  color: #93c5fd;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .status-ok {
     background: rgba(22, 101, 52, 0.28);
@@ -3830,5 +3914,30 @@ button.expense-category-row:hover,
   :root:not([data-theme="light"]) .status-red {
     background: rgba(153, 27, 27, 0.32);
     color: #fca5a5;
+  }
+
+  :root:not([data-theme="light"]) .health-red {
+    background: rgba(153, 27, 27, 0.32);
+    color: #fca5a5;
+  }
+
+  :root:not([data-theme="light"]) .health-orange {
+    background: rgba(154, 52, 18, 0.34);
+    color: #fdba74;
+  }
+
+  :root:not([data-theme="light"]) .health-yellow {
+    background: rgba(133, 77, 14, 0.34);
+    color: #fde68a;
+  }
+
+  :root:not([data-theme="light"]) .health-green {
+    background: rgba(22, 101, 52, 0.28);
+    color: #86efac;
+  }
+
+  :root:not([data-theme="light"]) .health-blue {
+    background: rgba(30, 64, 175, 0.34);
+    color: #93c5fd;
   }
 }
