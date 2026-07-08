@@ -34,7 +34,7 @@ button {
 }
 
 .app-shell {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 14px 0 30px;
 }
@@ -3134,7 +3134,7 @@ button:disabled {
 
 @media (max-width: 880px) {
   .app-shell {
-    width: min(100% - 10px, 680px);
+    width: min(calc(100vw - 10px), 680px);
     padding-top: 6px;
     padding-bottom: 78px;
   }
@@ -3212,13 +3212,25 @@ button:disabled {
 
   .tabs {
     position: fixed;
-    right: 5px;
+    right: auto;
     bottom: 5px;
-    left: 5px;
+    left: 50%;
     top: auto;
+    width: min(calc(100vw - 10px), 680px);
+    transform: translateX(-50%);
     z-index: 20;
     margin: 0;
     box-shadow: 0 10px 28px rgba(33, 31, 28, 0.16);
+  }
+
+  @supports (width: 100dvw) {
+    .app-shell {
+      width: min(calc(100dvw - 10px), 680px);
+    }
+
+    .tabs {
+      width: min(calc(100dvw - 10px), 680px);
+    }
   }
 
   .tab {
