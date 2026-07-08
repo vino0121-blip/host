@@ -6358,8 +6358,18 @@ function ManagementView({
         </div>
       </section>
       {activeSetting && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={activeSetting.title}>
-          <article className="panel management-settings-modal">
+        <div
+          className="modal-backdrop management-settings-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={activeSetting.title}
+          tabIndex={-1}
+          onClick={() => setActiveSettingId(null)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setActiveSettingId(null);
+          }}
+        >
+          <article className="panel management-settings-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-title-row">
               <div>
                 <p className="eyebrow">{activeSetting.group}</p>
