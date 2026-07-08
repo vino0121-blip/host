@@ -74,6 +74,12 @@ type StoreAccount = {
   password: string;
 };
 
+type CheckoutTemplate = {
+  id: number;
+  name: string;
+  total: number;
+};
+
 type Receivable = {
   id: number;
   sourceCheckId?: number;
@@ -275,6 +281,7 @@ type StoreSettings = {
   closeHour: number;
   checkoutMainSubtotal: number;
   checkoutVipSubtotal: number;
+  checkoutTemplates: CheckoutTemplate[];
   payrollRate: number;
   payrollBase: "subtotal" | "total";
   withholdingTaxRate: 0 | 10.21;
@@ -825,8 +832,32 @@ const printDocument = (title: string, bodyHtml: string) => {
 
 const tableTotal = (check: TableCheck) => {
   const service = Math.round(check.subtotal * (check.serviceRate / 100));
-  const tax = Math.round((check.subtotal + service) * (check.taxRate / 100));
+  const tax = Math.round(check.subtotal * (check.taxRate / 100));
   return Math.max(0, check.subtotal + service + tax - check.discount);
+};
+
+const actualConsumptionTax = (check: TableCheck) => {
+  const total = tableTotal(check);
+  return Math.round(total - total / (1 + check.taxRate / 100));
+};
+
+const checkoutSubtotalForTotal = (targetTotal: number, settings: StoreSettings) => {
+  const multiplier = 1 + settings.serviceRate / 100 + settings.taxRate / 100;
+  let subtotal = Math.max(0, Math.round(targetTotal / Math.max(multiplier, 1)));
+  let pricedCheck = {
+    ...blankCheck(0, settings),
+    subtotal,
+    discount: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    receivableAmount: 0
+  };
+  while (subtotal < targetTotal && tableTotal(pricedCheck) < targetTotal) {
+    subtotal += 1;
+    pricedCheck = { ...pricedCheck, subtotal };
+  }
+  const discount = Math.max(0, tableTotal(pricedCheck) - targetTotal);
+  return { subtotal, discount };
 };
 
 const payrollBaseAmount = (check: TableCheck, settings: StoreSettings) =>
@@ -1036,6 +1067,7 @@ const defaultStoreSettings: StoreSettings = {
   closeHour: 5,
   checkoutMainSubtotal: 120000,
   checkoutVipSubtotal: 200000,
+  checkoutTemplates: [],
   payrollRate: 48,
   payrollBase: "total",
   withholdingTaxRate: 0,
@@ -1100,7 +1132,7 @@ const blankCheck = (hostId: number, settings: StoreSettings = defaultStoreSettin
     customerName: "名前未入力",
     hostId,
     guests: 2,
-    subtotal: settings.checkoutMainSubtotal,
+    subtotal: 0,
     serviceRate: settings.serviceRate,
     taxRate: settings.taxRate,
     discount: 0,
@@ -1246,6 +1278,13 @@ const normalizeStoreSettings = (settings: StoreSettings) => ({
   ...(settings ?? {}),
   checkoutMainSubtotal: Math.max(0, Number(settings?.checkoutMainSubtotal ?? defaultStoreSettings.checkoutMainSubtotal) || 0),
   checkoutVipSubtotal: Math.max(0, Number(settings?.checkoutVipSubtotal ?? defaultStoreSettings.checkoutVipSubtotal) || 0),
+  checkoutTemplates: Array.isArray(settings?.checkoutTemplates)
+    ? settings.checkoutTemplates.map((item, index) => ({
+        id: Number(item.id) || Date.now() + index,
+        name: String(item.name || `テンプレ${index + 1}`),
+        total: Math.max(0, Number(item.total) || 0)
+      })).filter((item) => item.name.trim())
+    : [],
   withholdingTaxRate: settings?.withholdingTaxRate === 10.21 ? 10.21 : 0,
   receivablesEnabled: settings?.receivablesEnabled ?? true,
   themeMode: settings?.themeMode === "dark" || settings?.themeMode === "light" ? settings.themeMode : "system"
@@ -3966,7 +4005,7 @@ function CheckoutView({
   const [paymentFilter, setPaymentFilter] = React.useState("all");
   const calculatedDraft = { ...draftCheck, serviceRate: storeSettings.serviceRate, taxRate: storeSettings.taxRate };
   const service = Math.round(calculatedDraft.subtotal * (storeSettings.serviceRate / 100));
-  const tax = Math.round((calculatedDraft.subtotal + service) * (storeSettings.taxRate / 100));
+  const tax = Math.round(calculatedDraft.subtotal * (storeSettings.taxRate / 100));
   const total = tableTotal(calculatedDraft);
   const taxTotal = service + tax;
   const todayTotal = tableChecks.reduce((sum, check) => sum + tableTotal(check), 0);
@@ -4135,6 +4174,7 @@ function CheckoutView({
           <div><span>小計</span><b>{money(draftCheck.subtotal)}</b></div>
           <div><span>税サ {storeSettings.serviceRate}%</span><b>{money(service)}</b></div>
           <div><span>消費税 {storeSettings.taxRate}%</span><b>{money(tax)}</b></div>
+          <div><span>実消費税</span><b>{money(actualConsumptionTax(calculatedDraft))}</b></div>
           <div><span>値引き</span><b>-{money(draftCheck.discount)}</b></div>
         </div>
       </article>
@@ -4164,9 +4204,10 @@ function CheckoutEditorModal({
   onClose: () => void;
   onSave: () => void;
 }) {
+  const [selectedTemplateId, setSelectedTemplateId] = React.useState("");
   const calculatedDraft = withAutoReceivable(draftCheck, storeSettings);
   const service = Math.round(calculatedDraft.subtotal * (storeSettings.serviceRate / 100));
-  const tax = Math.round((calculatedDraft.subtotal + service) * (storeSettings.taxRate / 100));
+  const tax = Math.round(calculatedDraft.subtotal * (storeSettings.taxRate / 100));
   const total = tableTotal(calculatedDraft);
   const taxTotal = service + tax;
   const paidTotal = calculatedDraft.cashAmount + calculatedDraft.cardAmount + (receivablesEnabled ? calculatedDraft.receivableAmount : 0);
@@ -4177,8 +4218,12 @@ function CheckoutEditorModal({
     0
   ) : 0;
   const updateDraft = (patch: Partial<TableCheck>) => onChangeDraft({ ...draftCheck, ...patch });
-  const applyCheckoutPattern = (subtotal: number) => {
-    const nextBase = withAutoReceivable({ ...draftCheck, subtotal }, storeSettings);
+  const applyCheckoutTemplate = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = storeSettings.checkoutTemplates.find((item) => String(item.id) === templateId);
+    if (!template) return;
+    const { subtotal, discount } = checkoutSubtotalForTotal(template.total, storeSettings);
+    const nextBase = withAutoReceivable({ ...draftCheck, subtotal, discount }, storeSettings);
     const nextTotal = tableTotal(nextBase);
     if (nextBase.payment === "現金") {
       onChangeDraft({ ...nextBase, cashAmount: nextTotal, cardAmount: 0, receivableAmount: 0 });
@@ -4218,7 +4263,18 @@ function CheckoutEditorModal({
             <p className="eyebrow">卓ごとの会計</p>
             <h3>{editingCheckId === null ? "会計入力" : "会計編集"}</h3>
           </div>
-          {receivablesEnabled && <span className="status-pill status-warn">売掛 {money(receivableTotal)}</span>}
+          <div className="checkout-modal-tools">
+            <SelectField
+              label="テンプレ"
+              value={selectedTemplateId}
+              options={[
+                { label: "テンプレなし", value: "" },
+                ...storeSettings.checkoutTemplates.map((item) => ({ label: `${item.name} ${money(item.total)}`, value: String(item.id) }))
+              ]}
+              onChange={applyCheckoutTemplate}
+            />
+            {receivablesEnabled && <span className="status-pill status-warn">売掛 {money(receivableTotal)}</span>}
+          </div>
         </div>
 
         <div className="form-grid checkout-form">
@@ -4243,15 +4299,6 @@ function CheckoutEditorModal({
             <b>{money(taxTotal)}</b>
           </div>
           <NumberField label="値引き" value={draftCheck.discount} min={0} step={1} onChange={(discount) => updateDraft({ discount })} />
-        </div>
-
-        <div className="checkout-pattern-row">
-          <button className="icon-text-button ghost-button" type="button" onClick={() => applyCheckoutPattern(storeSettings.checkoutMainSubtotal)}>
-            メイン {money(storeSettings.checkoutMainSubtotal)}
-          </button>
-          <button className="icon-text-button ghost-button" type="button" onClick={() => applyCheckoutPattern(storeSettings.checkoutVipSubtotal)}>
-            VIP {money(storeSettings.checkoutVipSubtotal)}
-          </button>
         </div>
 
         <div className="form-grid checkout-form payment-split">
@@ -4287,6 +4334,7 @@ function CheckoutEditorModal({
           <div><span>小計</span><b>{money(draftCheck.subtotal)}</b></div>
           <div><span>税サ {storeSettings.serviceRate}%</span><b>{money(service)}</b></div>
           <div><span>消費税 {storeSettings.taxRate}%</span><b>{money(tax)}</b></div>
+          <div><span>実消費税</span><b>{money(actualConsumptionTax(calculatedDraft))}</b></div>
           <div><span>値引き</span><b>-{money(draftCheck.discount)}</b></div>
         </div>
       </article>
@@ -6182,6 +6230,36 @@ function ManagementView({
       onSaveCaution={onSaveCustomerCaution}
     />
   ) : null;
+  const updateCheckoutTemplate = (id: number, patch: Partial<CheckoutTemplate>) => {
+    onUpdateSettings({
+      ...settings,
+      checkoutTemplates: settings.checkoutTemplates.map((template) => (
+        template.id === id
+          ? {
+              ...template,
+              ...patch,
+              name: patch.name ?? template.name,
+              total: patch.total === undefined ? template.total : Math.max(0, patch.total)
+            }
+          : template
+      ))
+    });
+  };
+  const addCheckoutTemplate = () => {
+    onUpdateSettings({
+      ...settings,
+      checkoutTemplates: [
+        ...settings.checkoutTemplates,
+        { id: Date.now(), name: "新規テンプレ", total: 0 }
+      ]
+    });
+  };
+  const deleteCheckoutTemplate = (id: number) => {
+    onUpdateSettings({
+      ...settings,
+      checkoutTemplates: settings.checkoutTemplates.filter((template) => template.id !== id)
+    });
+  };
   const storeSettingsContent = (
     <>
       <div className="form-grid">
@@ -6189,8 +6267,6 @@ function ManagementView({
         <NumberField label="消費税 %" value={settings.taxRate} min={0} max={20} step={1} onChange={(taxRate) => onUpdateSettings({ ...settings, taxRate })} />
         <NumberField label="営業開始" value={settings.openHour} min={0} max={23} step={1} onChange={(openHour) => onUpdateSettings({ ...settings, openHour })} />
         <NumberField label="営業終了" value={settings.closeHour} min={0} max={23} step={1} onChange={(closeHour) => onUpdateSettings({ ...settings, closeHour })} />
-        <NumberField label="メイン小計" value={settings.checkoutMainSubtotal} min={0} step={1000} onChange={(checkoutMainSubtotal) => onUpdateSettings({ ...settings, checkoutMainSubtotal })} />
-        <NumberField label="VIP小計" value={settings.checkoutVipSubtotal} min={0} step={1000} onChange={(checkoutVipSubtotal) => onUpdateSettings({ ...settings, checkoutVipSubtotal })} />
         <NumberField label="給与歩合 %" value={settings.payrollRate} min={0} max={100} step={1} onChange={(payrollRate) => onUpdateSettings({ ...settings, payrollRate })} />
         <SelectField
           label="給与対象"
@@ -6229,6 +6305,36 @@ function ManagementView({
           ]}
           onChange={(themeMode) => onUpdateSettings({ ...settings, themeMode: themeMode as StoreSettings["themeMode"] })}
         />
+      </div>
+      <div className="checkout-template-settings">
+        <div className="section-title-row">
+          <div>
+            <p className="eyebrow">会計辞書</p>
+            <h3>会計テンプレ</h3>
+          </div>
+          <button className="icon-text-button" type="button" onClick={addCheckoutTemplate}>
+            <Plus size={14} />
+            追加
+          </button>
+        </div>
+        {settings.checkoutTemplates.length === 0 ? (
+          <div className="plain-note compact-note">
+            <ReceiptText size={16} />
+            <p>会計テンプレは未登録です。初回、通常、VIPなど表示したい合計金額で作成できます。</p>
+          </div>
+        ) : (
+          <div className="checkout-template-list">
+            {settings.checkoutTemplates.map((template) => (
+              <div className="checkout-template-row" key={template.id}>
+                <TextField label="名前" value={template.name} onChange={(name) => updateCheckoutTemplate(template.id, { name })} />
+                <NumberField label="表示合計" value={template.total} min={0} step={1000} onChange={(total) => updateCheckoutTemplate(template.id, { total })} />
+                <button className="icon-button danger-button" type="button" aria-label="会計テンプレ削除" onClick={() => deleteCheckoutTemplate(template.id)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="plain-note">
         <ReceiptText size={16} />

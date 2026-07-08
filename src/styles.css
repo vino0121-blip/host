@@ -2044,6 +2044,38 @@ button.expense-category-row:hover {
   white-space: nowrap;
 }
 
+.checkout-modal-tools {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: min(320px, 100%);
+}
+
+.checkout-modal-tools .number-field {
+  min-width: 190px;
+}
+
+.checkout-template-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e4ded3;
+}
+
+.checkout-template-list {
+  display: grid;
+  gap: 6px;
+}
+
+.checkout-template-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 0.8fr) 32px;
+  align-items: end;
+  gap: 6px;
+}
+
 .payment-balance {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
