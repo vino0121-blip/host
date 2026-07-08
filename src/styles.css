@@ -2169,6 +2169,11 @@ button:disabled {
   background: rgb(17 24 39 / 0.42);
 }
 
+.management-settings-backdrop {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 .checkout-editor-panel {
   border-color: #cbd5e1;
 }

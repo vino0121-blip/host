@@ -6090,7 +6090,8 @@ function ManagementView({
   canManage,
   onUpdateUser,
   onAddUser,
-  onDeleteUser
+  onDeleteUser,
+  onForceLogoutUser
 }: {
   currentUser: AppUser;
   settings: StoreSettings;
@@ -6124,6 +6125,7 @@ function ManagementView({
   onUpdateUser: (id: number, patch: Partial<AppUser>) => void;
   onAddUser: () => void;
   onDeleteUser: (id: number) => void;
+  onForceLogoutUser: (user: AppUser) => void;
 }) {
   const canEditStoreSettings = currentUser.role === "admin" || currentUser.role === "staff";
   const backupInputId = `backup-file-${currentUser.id}`;
