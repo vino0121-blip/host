@@ -6331,67 +6331,58 @@ function ManagementView({
     items: settingsItems.filter((item) => item.group === group)
   }));
 
-  return (
-    <>
+  if (activeSetting) {
+    return (
       <section className="management-settings-screen">
-        <article className="panel management-profile-card">
-          <span className="management-profile-icon">
-            <UserCog size={22} />
-          </span>
-          <div>
-            <p>{roleLabel[currentUser.role]}</p>
-            <h3>{currentUser.name}</h3>
-            <small>{canEditStoreSettings ? "店舗管理メニュー" : "個人設定"}</small>
-          </div>
-        </article>
-        <div className="management-settings-groups">
-          {groupedSettings.map((group) => (
-            <div className="management-settings-group" key={group.group}>
-              <p>{group.group}</p>
-              <div className="management-settings-list">
-                {group.items.map((item) => (
-                  <ManagementSettingRow item={item} key={item.id} onOpen={setActiveSettingId} />
-                ))}
-              </div>
+        <article className="panel management-settings-detail">
+          <div className="modal-title-row">
+            <div>
+              <p className="eyebrow">{activeSetting.group}</p>
+              <h3>{activeSetting.title}</h3>
             </div>
-          ))}
-        </div>
-      </section>
-      {activeSetting && (
-        <div
-          className="modal-backdrop management-settings-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={activeSetting.title}
-          tabIndex={-1}
-          onClick={() => setActiveSettingId(null)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setActiveSettingId(null);
-          }}
-        >
-          <article className="panel management-settings-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-title-row">
-              <div>
-                <p className="eyebrow">{activeSetting.group}</p>
-                <h3>{activeSetting.title}</h3>
-              </div>
-              <div className="management-modal-actions">
-                {activeSetting.id === "employees" && canManage && (
-                  <button className="icon-text-button" type="button" onClick={onAddUser}>
-                    <Plus size={16} />
-                    追加
-                  </button>
-                )}
-                <button className="icon-text-button ghost-button" type="button" onClick={() => setActiveSettingId(null)}>
-                  閉じる
+            <div className="management-modal-actions">
+              {activeSetting.id === "employees" && canManage && (
+                <button className="icon-text-button" type="button" onClick={onAddUser}>
+                  <Plus size={16} />
+                  追加
                 </button>
-              </div>
+              )}
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setActiveSettingId(null)}>
+                戻る
+              </button>
             </div>
-            <div className="management-settings-modal-body">{activeSetting.content}</div>
-          </article>
+          </div>
+          <div className="management-settings-modal-body">{activeSetting.content}</div>
+        </article>
+      </section>
+    );
+  }
+
+  return (
+    <section className="management-settings-screen">
+      <article className="panel management-profile-card">
+        <span className="management-profile-icon">
+          <UserCog size={22} />
+        </span>
+        <div>
+          <p>{roleLabel[currentUser.role]}</p>
+          <h3>{currentUser.name}</h3>
+          <small>{canEditStoreSettings ? "店舗管理メニュー" : "個人設定"}</small>
         </div>
-      )}
-    </>
+      </article>
+      <div className="management-settings-groups">
+        {groupedSettings.map((group) => (
+          <div className="management-settings-group" key={group.group}>
+            <p>{group.group}</p>
+            <div className="management-settings-list">
+              {group.items.map((item) => (
+                <ManagementSettingRow item={item} key={item.id} onOpen={setActiveSettingId} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -2946,16 +2946,10 @@ button:disabled {
   overflow: hidden;
 }
 
-.management-settings-backdrop {
-  align-items: start;
-  place-items: start center;
-  overflow: auto;
-  background: rgb(17 24 39 / 0.28);
-}
-
-.management-settings-backdrop .management-settings-modal {
-  margin-top: 10px;
-  box-shadow: 0 18px 60px rgb(17 24 39 / 0.24);
+.management-settings-detail {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
 }
 
 .modal-title-row {
@@ -2976,9 +2970,7 @@ button:disabled {
 .management-settings-modal-body {
   display: grid;
   gap: 10px;
-  max-height: calc(100vh - 116px);
-  overflow: auto;
-  padding-right: 2px;
+  overflow: visible;
 }
 
 .device-session-list {
