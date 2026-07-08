@@ -2801,6 +2801,142 @@ button:disabled {
   gap: 8px;
 }
 
+.management-settings-screen {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.management-profile-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.management-profile-icon,
+.management-setting-icon {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #e4ded3;
+  background: #fbfaf7;
+  color: #4b463f;
+}
+
+.management-profile-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.management-profile-card p,
+.management-profile-card h3,
+.management-profile-card small {
+  margin: 0;
+}
+
+.management-profile-card p,
+.management-profile-card small {
+  color: #6f6a62;
+  font-size: 11px;
+}
+
+.management-profile-card h3 {
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.management-settings-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.management-settings-group {
+  display: grid;
+  gap: 4px;
+}
+
+.management-settings-group > p {
+  margin: 0;
+  padding: 0 4px;
+  color: #6f6a62;
+  font-size: 10px;
+}
+
+.management-settings-list {
+  overflow: hidden;
+  border: 1px solid #ded8cd;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.management-setting-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-bottom: 1px solid #eee8de;
+  background: transparent;
+  color: #151515;
+  padding: 7px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.management-setting-row:last-child {
+  border-bottom: 0;
+}
+
+.management-setting-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.management-setting-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.management-setting-copy span,
+.management-setting-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.management-setting-copy span {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.management-setting-copy small {
+  color: #6f6a62;
+  font-size: 10px;
+}
+
+.management-settings-modal {
+  width: min(900px, 100%);
+  max-height: min(760px, calc(100vh - 28px));
+  overflow: hidden;
+}
+
+.management-settings-modal-body {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 116px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .device-session-list {
   display: grid;
   gap: 6px;
@@ -3815,6 +3951,7 @@ body {
 .modal-backdrop .panel,
 .account-footer,
 .collapsible-panel,
+.management-settings-list,
 .closing-history-inline,
 .tax-return-year-panel,
 .tax-return-payroll-panel {
@@ -3856,7 +3993,10 @@ body {
 .device-session-row,
 .host-customer-memo-row,
 .plain-note,
-.compact-note {
+.compact-note,
+.management-setting-row,
+.management-profile-icon,
+.management-setting-icon {
   border-color: var(--border-soft);
   background: var(--surface-soft);
   color: var(--text-main);
@@ -3897,7 +4037,11 @@ body {
 .customer-card-lines p,
 .customer-card-lines small,
 .compact-note p,
-.plain-note p {
+.plain-note p,
+.management-profile-card p,
+.management-profile-card small,
+.management-settings-group > p,
+.management-setting-copy small {
   color: var(--text-muted);
 }
 

@@ -6,6 +6,7 @@ import {
   BarChart3,
   Camera,
   CheckCircle2,
+  ChevronRight,
   Clock,
   ClipboardList,
   Coins,
@@ -6003,6 +6004,38 @@ function CollapsiblePanel({
   );
 }
 
+type ManagementSettingItem = {
+  id: string;
+  group: string;
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number }>;
+  content: React.ReactNode;
+};
+
+function ManagementSettingRow({
+  item,
+  onOpen
+}: {
+  item: ManagementSettingItem;
+  onOpen: (id: string) => void;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <button className="management-setting-row" type="button" onClick={() => onOpen(item.id)}>
+      <span className="management-setting-icon">
+        <Icon size={17} />
+      </span>
+      <span className="management-setting-copy">
+        <span>{item.title}</span>
+        <small>{item.description}</small>
+      </span>
+      <ChevronRight size={16} />
+    </button>
+  );
+}
+
 function ManagementView({
   currentUser,
   settings,
@@ -6072,182 +6105,116 @@ function ManagementView({
 }) {
   const canEditStoreSettings = currentUser.role === "admin" || currentUser.role === "staff";
   const backupInputId = `backup-file-${currentUser.id}`;
+  const [activeSettingId, setActiveSettingId] = React.useState<string | null>(null);
 
-  return (
-    <section className="content-grid management-grid">
-      {canEditStoreSettings && (
-        <>
-        <CollapsiblePanel eyebrow="管理" title="従業員" icon={Users} className="management-employees-panel">
-          <EmployeePanel
-            users={users}
-            canManage={canManage}
-            onUpdateUser={onUpdateUser}
-            onAddUser={onAddUser}
-            onDeleteUser={onDeleteUser}
-            embedded
-          />
-        </CollapsiblePanel>
-        <CollapsiblePanel eyebrow="顧客" title="顧客履歴" icon={UserRound} className="management-customer-panel">
-          <CustomerManagementPanel
-            hosts={hosts}
-            tableChecks={tableChecks}
-            receivables={receivables}
-            currentBusinessDate={currentBusinessDate}
-            customerProfiles={customerProfiles}
-            bottles={bottles}
-            hostName={hostName}
-            receivablesEnabled={settings.receivablesEnabled}
-          />
-        </CollapsiblePanel>
-        <CollapsiblePanel eyebrow="ボトル" title="ボトル管理" icon={ClipboardList} className="management-bottle-panel">
-          <BottleManagementPanel
-            hosts={hosts}
-            bottles={bottles}
-            hostName={hostName}
-            onAddBottle={onAddBottle}
-            onUpdateBottle={onUpdateBottle}
-            onDeleteBottle={onDeleteBottle}
-          />
-        </CollapsiblePanel>
-        <CollapsiblePanel eyebrow="接客" title="来店予定管理" icon={CheckCircle2} className="management-action-panel">
-          <CustomerActionManagementPanel
-            actions={customerActions}
-            hostName={hostName}
-            onDeleteAction={onDeleteCustomerAction}
-            onMoveToOpenTable={onMoveCustomerActionToOpenTable}
-          />
-        </CollapsiblePanel>
-        </>
-      )}
-
-      {currentUser.role === "host" && currentUser.hostId && (
-        <CollapsiblePanel eyebrow="顧客" title="注意メモ" icon={UserRound} className="management-customer-panel">
-          <HostCustomerMemoPanel
-            host={hosts.find((host) => host.id === currentUser.hostId) ?? hosts[0]}
-            tableChecks={tableChecks}
-            customerProfiles={customerProfiles}
-            currentBusinessDate={currentBusinessDate}
-            onSaveCaution={onSaveCustomerCaution}
-          />
-        </CollapsiblePanel>
-      )}
-
-      {canEditStoreSettings && (
-        <CollapsiblePanel eyebrow="店舗設定" title="税・サ設定" icon={Percent} className="management-store-panel">
-          <div className="form-grid">
-            <NumberField
-              label="税サ %"
-              value={settings.serviceRate}
-              min={0}
-              max={50}
-              step={1}
-              onChange={(serviceRate) => onUpdateSettings({ ...settings, serviceRate })}
-            />
-            <NumberField
-              label="消費税 %"
-              value={settings.taxRate}
-              min={0}
-              max={20}
-              step={1}
-              onChange={(taxRate) => onUpdateSettings({ ...settings, taxRate })}
-            />
-            <NumberField
-              label="営業開始"
-              value={settings.openHour}
-              min={0}
-              max={23}
-              step={1}
-              onChange={(openHour) => onUpdateSettings({ ...settings, openHour })}
-            />
-            <NumberField
-              label="営業終了"
-              value={settings.closeHour}
-              min={0}
-              max={23}
-              step={1}
-              onChange={(closeHour) => onUpdateSettings({ ...settings, closeHour })}
-            />
-            <NumberField
-              label="メイン小計"
-              value={settings.checkoutMainSubtotal}
-              min={0}
-              step={1000}
-              onChange={(checkoutMainSubtotal) => onUpdateSettings({ ...settings, checkoutMainSubtotal })}
-            />
-            <NumberField
-              label="VIP小計"
-              value={settings.checkoutVipSubtotal}
-              min={0}
-              step={1000}
-              onChange={(checkoutVipSubtotal) => onUpdateSettings({ ...settings, checkoutVipSubtotal })}
-            />
-            <NumberField
-              label="給与歩合 %"
-              value={settings.payrollRate}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(payrollRate) => onUpdateSettings({ ...settings, payrollRate })}
-            />
-            <SelectField
-              label="給与対象"
-              value={settings.payrollBase}
-              options={[
-                { label: "小計", value: "subtotal" },
-                { label: "総計", value: "total" }
-              ]}
-              onChange={(payrollBase) => onUpdateSettings({ ...settings, payrollBase: payrollBase as StoreSettings["payrollBase"] })}
-            />
-            <SelectField
-              label="源泉所得税"
-              value={String(settings.withholdingTaxRate ?? 0)}
-              options={[
-                { label: "0", value: "0" },
-                { label: "10.21%", value: "10.21" }
-              ]}
-              onChange={(withholdingTaxRate) => onUpdateSettings({ ...settings, withholdingTaxRate: Number(withholdingTaxRate) as StoreSettings["withholdingTaxRate"] })}
-            />
-            <SelectField
-              label="売掛"
-              value={settings.receivablesEnabled ? "on" : "off"}
-              options={[
-                { label: "ON", value: "on" },
-                { label: "OFF", value: "off" }
-              ]}
-              onChange={(value) => onUpdateSettings({ ...settings, receivablesEnabled: value === "on" })}
-            />
-            <SelectField
-              label="表示"
-              value={settings.themeMode}
-              options={[
-                { label: "システム", value: "system" },
-                { label: "ライト", value: "light" },
-                { label: "ダーク", value: "dark" }
-              ]}
-              onChange={(themeMode) => onUpdateSettings({ ...settings, themeMode: themeMode as StoreSettings["themeMode"] })}
-            />
-          </div>
-          <div className="plain-note">
-            <ReceiptText size={16} />
-            <div>
-              <strong>会計入力ではここを自動使用</strong>
-              <p>営業時間をまたぐ営業日は、終了時刻前なら前日扱いで会計日付を付けます。</p>
-            </div>
-          </div>
-        </CollapsiblePanel>
-      )}
-
-      <CollapsiblePanel eyebrow="経費" title="勘定科目の目安" icon={ReceiptText} className="management-expense-guide-panel">
-        <ExpenseAccountGuide />
-      </CollapsiblePanel>
-
-      {canEditStoreSettings && (
-        <CollapsiblePanel eyebrow="監査" title="操作履歴" icon={ShieldCheck} className="management-log-panel">
-          <OperationLogPanel logs={operationLogs} />
-        </CollapsiblePanel>
-      )}
-
-      <CollapsiblePanel eyebrow="アカウント" title={`${roleLabel[currentUser.role]} / ${currentUser.name}`} icon={UserCog} className="management-account-panel">
+  const employeeContent = (
+    <EmployeePanel
+      users={users}
+      canManage={canManage}
+      onUpdateUser={onUpdateUser}
+      onAddUser={onAddUser}
+      onDeleteUser={onDeleteUser}
+      embedded
+    />
+  );
+  const customerContent = (
+    <CustomerManagementPanel
+      hosts={hosts}
+      tableChecks={tableChecks}
+      receivables={receivables}
+      currentBusinessDate={currentBusinessDate}
+      customerProfiles={customerProfiles}
+      bottles={bottles}
+      hostName={hostName}
+      receivablesEnabled={settings.receivablesEnabled}
+    />
+  );
+  const bottleContent = (
+    <BottleManagementPanel
+      hosts={hosts}
+      bottles={bottles}
+      hostName={hostName}
+      onAddBottle={onAddBottle}
+      onUpdateBottle={onUpdateBottle}
+      onDeleteBottle={onDeleteBottle}
+    />
+  );
+  const actionContent = (
+    <CustomerActionManagementPanel
+      actions={customerActions}
+      hostName={hostName}
+      onDeleteAction={onDeleteCustomerAction}
+      onMoveToOpenTable={onMoveCustomerActionToOpenTable}
+    />
+  );
+  const hostMemoContent = currentUser.role === "host" && currentUser.hostId ? (
+    <HostCustomerMemoPanel
+      host={hosts.find((host) => host.id === currentUser.hostId) ?? hosts[0]}
+      tableChecks={tableChecks}
+      customerProfiles={customerProfiles}
+      currentBusinessDate={currentBusinessDate}
+      onSaveCaution={onSaveCustomerCaution}
+    />
+  ) : null;
+  const storeSettingsContent = (
+    <>
+      <div className="form-grid">
+        <NumberField label="税サ %" value={settings.serviceRate} min={0} max={50} step={1} onChange={(serviceRate) => onUpdateSettings({ ...settings, serviceRate })} />
+        <NumberField label="消費税 %" value={settings.taxRate} min={0} max={20} step={1} onChange={(taxRate) => onUpdateSettings({ ...settings, taxRate })} />
+        <NumberField label="営業開始" value={settings.openHour} min={0} max={23} step={1} onChange={(openHour) => onUpdateSettings({ ...settings, openHour })} />
+        <NumberField label="営業終了" value={settings.closeHour} min={0} max={23} step={1} onChange={(closeHour) => onUpdateSettings({ ...settings, closeHour })} />
+        <NumberField label="メイン小計" value={settings.checkoutMainSubtotal} min={0} step={1000} onChange={(checkoutMainSubtotal) => onUpdateSettings({ ...settings, checkoutMainSubtotal })} />
+        <NumberField label="VIP小計" value={settings.checkoutVipSubtotal} min={0} step={1000} onChange={(checkoutVipSubtotal) => onUpdateSettings({ ...settings, checkoutVipSubtotal })} />
+        <NumberField label="給与歩合 %" value={settings.payrollRate} min={0} max={100} step={1} onChange={(payrollRate) => onUpdateSettings({ ...settings, payrollRate })} />
+        <SelectField
+          label="給与対象"
+          value={settings.payrollBase}
+          options={[
+            { label: "小計", value: "subtotal" },
+            { label: "総計", value: "total" }
+          ]}
+          onChange={(payrollBase) => onUpdateSettings({ ...settings, payrollBase: payrollBase as StoreSettings["payrollBase"] })}
+        />
+        <SelectField
+          label="源泉所得税"
+          value={String(settings.withholdingTaxRate ?? 0)}
+          options={[
+            { label: "0", value: "0" },
+            { label: "10.21%", value: "10.21" }
+          ]}
+          onChange={(withholdingTaxRate) => onUpdateSettings({ ...settings, withholdingTaxRate: Number(withholdingTaxRate) as StoreSettings["withholdingTaxRate"] })}
+        />
+        <SelectField
+          label="売掛"
+          value={settings.receivablesEnabled ? "on" : "off"}
+          options={[
+            { label: "ON", value: "on" },
+            { label: "OFF", value: "off" }
+          ]}
+          onChange={(value) => onUpdateSettings({ ...settings, receivablesEnabled: value === "on" })}
+        />
+        <SelectField
+          label="表示"
+          value={settings.themeMode}
+          options={[
+            { label: "システム", value: "system" },
+            { label: "ライト", value: "light" },
+            { label: "ダーク", value: "dark" }
+          ]}
+          onChange={(themeMode) => onUpdateSettings({ ...settings, themeMode: themeMode as StoreSettings["themeMode"] })}
+        />
+      </div>
+      <div className="plain-note">
+        <ReceiptText size={16} />
+        <div>
+          <strong>会計入力ではここを自動使用</strong>
+          <p>営業時間をまたぐ営業日は、終了時刻前なら前日扱いで会計日付を付けます。</p>
+        </div>
+      </div>
+    </>
+  );
+  const accountContent = (
+    <>
         <div className="management-actions">
           <button className="install-button" type="button" onClick={onInstall}>
             <Download size={18} />
@@ -6319,9 +6286,70 @@ function ManagementView({
           <p className="tax-note">従業員一覧ではパスワードを編集せず、本人がここで変更します。</p>
         </div>
         <p className="tax-note">{notice}</p>
-      </CollapsiblePanel>
+    </>
+  );
+  const settingsItems: ManagementSettingItem[] = [
+    ...(canEditStoreSettings ? [
+      { id: "employees", group: "店舗", title: "従業員", description: `${users.length}人 / 権限`, icon: Users, content: employeeContent },
+      { id: "store", group: "店舗", title: "店舗設定", description: `税サ${settings.serviceRate}% / 消費税${settings.taxRate}%`, icon: Percent, content: storeSettingsContent },
+      { id: "actions", group: "接客", title: "来店予定管理", description: `${customerActions.length}件`, icon: CheckCircle2, content: actionContent },
+      { id: "customers", group: "接客", title: "顧客履歴", description: "最終来店・当月回数・注意", icon: UserRound, content: customerContent },
+      { id: "bottles", group: "接客", title: "ボトル管理", description: `${bottles.length}件`, icon: ClipboardList, content: bottleContent }
+    ] as ManagementSettingItem[] : []),
+    ...(hostMemoContent ? [{ id: "host-caution", group: "顧客", title: "注意メモ", description: "担当顧客の注意事項", icon: UserRound, content: hostMemoContent }] as ManagementSettingItem[] : []),
+    { id: "expense-guide", group: "経費", title: "勘定科目の目安", description: "申告・決算用の分類", icon: ReceiptText, content: <ExpenseAccountGuide /> },
+    ...(canEditStoreSettings ? [{ id: "logs", group: "管理", title: "操作履歴", description: `${operationLogs.length}件`, icon: ShieldCheck, content: <OperationLogPanel logs={operationLogs} /> }] as ManagementSettingItem[] : []),
+    { id: "account", group: "アカウント", title: "アカウント", description: `${roleLabel[currentUser.role]} / ${currentUser.name}`, icon: UserCog, content: accountContent }
+  ];
+  const activeSetting = settingsItems.find((item) => item.id === activeSettingId);
+  const groupedSettings = Array.from(new Set(settingsItems.map((item) => item.group))).map((group) => ({
+    group,
+    items: settingsItems.filter((item) => item.group === group)
+  }));
 
-    </section>
+  return (
+    <>
+      <section className="management-settings-screen">
+        <article className="panel management-profile-card">
+          <span className="management-profile-icon">
+            <UserCog size={22} />
+          </span>
+          <div>
+            <p>{roleLabel[currentUser.role]}</p>
+            <h3>{currentUser.name}</h3>
+            <small>{canEditStoreSettings ? "店舗管理メニュー" : "個人設定"}</small>
+          </div>
+        </article>
+        <div className="management-settings-groups">
+          {groupedSettings.map((group) => (
+            <div className="management-settings-group" key={group.group}>
+              <p>{group.group}</p>
+              <div className="management-settings-list">
+                {group.items.map((item) => (
+                  <ManagementSettingRow item={item} key={item.id} onOpen={setActiveSettingId} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+      {activeSetting && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={activeSetting.title}>
+          <article className="panel management-settings-modal">
+            <div className="modal-title-row">
+              <div>
+                <p className="eyebrow">{activeSetting.group}</p>
+                <h3>{activeSetting.title}</h3>
+              </div>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => setActiveSettingId(null)}>
+                閉じる
+              </button>
+            </div>
+            <div className="management-settings-modal-body">{activeSetting.content}</div>
+          </article>
+        </div>
+      )}
+    </>
   );
 }
 
