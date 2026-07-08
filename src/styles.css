@@ -2642,7 +2642,7 @@ button:disabled {
 
 .employee-mini-controls {
   display: grid;
-  grid-template-columns: 72px 28px;
+  grid-template-columns: 72px 28px 28px;
   align-items: center;
   gap: 4px;
 }
@@ -2662,6 +2662,23 @@ button:disabled {
   width: 28px;
   min-width: 28px;
   height: 28px;
+}
+
+.employee-force-logout-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-color: rgba(185, 28, 28, 0.42);
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.management-modal-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .account-password-row {
@@ -2927,6 +2944,21 @@ button:disabled {
   width: min(900px, 100%);
   max-height: min(760px, calc(100vh - 28px));
   overflow: hidden;
+}
+
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.modal-title-row h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 500;
 }
 
 .management-settings-modal-body {
@@ -3365,7 +3397,7 @@ button:disabled {
   }
 
   .employee-mini-controls {
-    grid-template-columns: 76px 30px;
+    grid-template-columns: 76px 30px 30px;
     justify-content: end;
   }
 
@@ -4050,7 +4082,9 @@ body {
 .daily-summary-row span,
 .daily-summary-row strong,
 .daily-summary-row b,
-.payroll-row b {
+.payroll-row b,
+.expense-guide-row span,
+.expense-guide-row p {
   color: inherit;
 }
 
@@ -4252,6 +4286,12 @@ button.expense-category-row:hover,
   color: var(--text-main);
 }
 
+:root[data-theme="dark"] .employee-force-logout-button {
+  border-color: rgba(153, 27, 27, 0.42);
+  background: rgba(153, 27, 27, 0.28);
+  color: #fca5a5;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .edit-block,
   :root:not([data-theme="light"]) .checkout-total,
@@ -4292,5 +4332,11 @@ button.expense-category-row:hover,
     border-color: var(--border-strong);
     background: var(--surface);
     color: var(--text-main);
+  }
+
+  :root:not([data-theme="light"]) .employee-force-logout-button {
+    border-color: rgba(153, 27, 27, 0.42);
+    background: rgba(153, 27, 27, 0.28);
+    color: #fca5a5;
   }
 }

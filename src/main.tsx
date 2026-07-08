@@ -1449,6 +1449,16 @@ function App() {
     setNotice("保存端末情報を削除しました");
   };
 
+  const handleForceLogoutUser = (user: AppUser) => {
+    const nextLog = readDeviceLog().filter((device) => device.userId !== user.id);
+    writeDeviceLog(nextLog);
+    setDeviceLog(nextLog);
+    if (currentUser?.id === user.id) {
+      clearSavedDevice();
+    }
+    setNotice(`${user.name} の保存端末を解除しました`);
+  };
+
   const createBackupPayload = (): AppBackupPayload => ({
     version: appDataBackupVersion,
     exportedAt: new Date().toISOString(),
@@ -2401,6 +2411,7 @@ function App() {
               canManage={canManage}
               onUpdateUser={updateUser}
               onAddUser={addEmployee}
+              onForceLogoutUser={handleForceLogoutUser}
               onDeleteUser={(id) => setUsers((current) => current.filter((user) => user.id !== id))}
             />
           </section>
@@ -2437,6 +2448,7 @@ function App() {
             canManage={canManage}
             onUpdateUser={updateUser}
             onAddUser={addEmployee}
+            onForceLogoutUser={handleForceLogoutUser}
             onDeleteUser={(id) => setUsers((current) => current.filter((user) => user.id !== id))}
           />
         )
@@ -4511,12 +4523,14 @@ function EmployeesView({
   canManage,
   onUpdateUser,
   onAddUser,
+  onForceLogoutUser,
   onDeleteUser
 }: {
   users: AppUser[];
   canManage: boolean;
   onUpdateUser: (id: number, patch: Partial<AppUser>) => void;
   onAddUser: () => void;
+  onForceLogoutUser: (user: AppUser) => void;
   onDeleteUser: (id: number) => void;
 }) {
   return (
@@ -4527,6 +4541,7 @@ function EmployeesView({
         onUpdateUser={onUpdateUser}
         onAddUser={onAddUser}
         onDeleteUser={onDeleteUser}
+        onForceLogoutUser={onForceLogoutUser}
         className="wide"
       />
     </section>
@@ -4539,6 +4554,8 @@ function EmployeePanel({
   onUpdateUser,
   onAddUser,
   onDeleteUser,
+  onForceLogoutUser,
+  showEmbeddedActions = true,
   className = "",
   embedded = false
 }: {
@@ -4547,12 +4564,14 @@ function EmployeePanel({
   onUpdateUser: (id: number, patch: Partial<AppUser>) => void;
   onAddUser: () => void;
   onDeleteUser: (id: number) => void;
+  onForceLogoutUser?: (user: AppUser) => void;
+  showEmbeddedActions?: boolean;
   className?: string;
   embedded?: boolean;
 }) {
   const list = (
     <>
-      {embedded && canManage && (
+      {embedded && canManage && showEmbeddedActions && (
         <div className="employee-panel-actions">
           <button className="icon-text-button" type="button" onClick={onAddUser}>
             <Plus size={18} />
@@ -4574,6 +4593,9 @@ function EmployeePanel({
                     <option value="staff">内勤</option>
                     <option value="host">ホスト</option>
                   </select>
+                  <button className="icon-button employee-force-logout-button" type="button" aria-label={`${user.name}を強制ログアウト`} onClick={() => onForceLogoutUser?.(user)}>
+                    <LogOut size={13} />
+                  </button>
                   <button className="icon-button danger-button employee-delete-button" type="button" aria-label="従業員削除" onClick={() => onDeleteUser(user.id)}>
                     <Trash2 size={14} />
                   </button>
@@ -6114,6 +6136,8 @@ function ManagementView({
       onUpdateUser={onUpdateUser}
       onAddUser={onAddUser}
       onDeleteUser={onDeleteUser}
+      onForceLogoutUser={onForceLogoutUser}
+      showEmbeddedActions={false}
       embedded
     />
   );
@@ -6341,9 +6365,17 @@ function ManagementView({
                 <p className="eyebrow">{activeSetting.group}</p>
                 <h3>{activeSetting.title}</h3>
               </div>
-              <button className="icon-text-button ghost-button" type="button" onClick={() => setActiveSettingId(null)}>
-                閉じる
-              </button>
+              <div className="management-modal-actions">
+                {activeSetting.id === "employees" && canManage && (
+                  <button className="icon-text-button" type="button" onClick={onAddUser}>
+                    <Plus size={16} />
+                    追加
+                  </button>
+                )}
+                <button className="icon-text-button ghost-button" type="button" onClick={() => setActiveSettingId(null)}>
+                  閉じる
+                </button>
+              </div>
             </div>
             <div className="management-settings-modal-body">{activeSetting.content}</div>
           </article>
