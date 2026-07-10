@@ -38,7 +38,7 @@ declare global {
 }
 
 type Role = "admin" | "staff" | "host";
-type Tab = "dashboard" | "daily" | "summary" | "rankings" | "payroll" | "checkout" | "receivables" | "expenses" | "closing" | "personal" | "annual" | "admin";
+type Tab = "dashboard" | "daily" | "summary" | "rankings" | "payroll" | "checkout" | "service" | "receivables" | "expenses" | "closing" | "personal" | "annual" | "admin";
 type Payment = "現金" | "カード" | "売掛" | "振込" | "現金+カード" | "現金+売掛" | "カード+売掛" | "複合";
 type ReceivableStatus = "danger" | "soon" | "ok";
 type ReceivableCollection = "active" | "payrollDeducted";
@@ -78,6 +78,23 @@ type CheckoutTemplate = {
   id: number;
   name: string;
   total: number;
+};
+
+type ServiceItem = {
+  id: number;
+  name: string;
+  price: number;
+  category: "ドリンク" | "ボトル" | "フード" | "その他";
+};
+
+type ServiceEntry = {
+  id: number;
+  openTableId: number;
+  table: string;
+  itemName: string;
+  quantity: number;
+  amount: number;
+  time: string;
 };
 
 type Receivable = {
@@ -246,13 +263,12 @@ type OperationLog = {
   time: string;
   actor: string;
   role: string;
-  scope: "会計" | "経費" | "締め" | "来店予定" | "ボトル" | "給与";
-  action: "登録" | "編集" | "削除" | "保存" | "移動";
+  scope: string;
+  action: string;
   target: string;
   amount: number;
   detail: string;
 };
-
 type AppBackupPayload = {
   version: number;
   exportedAt: string;
@@ -266,6 +282,7 @@ type AppBackupPayload = {
     bottles: BottleKeep[];
     customerActions: CustomerAction[];
     openTables: OpenTable[];
+    serviceEntries: ServiceEntry[];
     expenses: Expense[];
     registerCloses: RegisterClose[];
     payrollAdjustments: Record<number, PayrollAdjustment>;
@@ -282,6 +299,7 @@ type StoreSettings = {
   checkoutMainSubtotal: number;
   checkoutVipSubtotal: number;
   checkoutTemplates: CheckoutTemplate[];
+  serviceItems: ServiceItem[];
   payrollRate: number;
   payrollBase: "subtotal" | "total";
   withholdingTaxRate: 0 | 10.21;
@@ -1044,6 +1062,14 @@ const paymentFilterOptionsFor = (receivablesEnabled: boolean) => [
   { label: "複合", value: "複合" }
 ];
 
+const defaultServiceItems: ServiceItem[] = [
+  { id: 1, name: "ビール", price: 1500, category: "ドリンク" },
+  { id: 2, name: "水割り", price: 1000, category: "ドリンク" },
+  { id: 3, name: "鏡月", price: 12000, category: "ボトル" },
+  { id: 4, name: "飾りボトル", price: 30000, category: "ボトル" },
+  { id: 5, name: "チャーム", price: 1000, category: "フード" }
+];
+
 const withAutoReceivable = (check: TableCheck, settings: StoreSettings) => {
   const pricedCheck = { ...check, serviceRate: settings.serviceRate, taxRate: settings.taxRate };
   const total = tableTotal(pricedCheck);
@@ -1068,6 +1094,7 @@ const defaultStoreSettings: StoreSettings = {
   checkoutMainSubtotal: 120000,
   checkoutVipSubtotal: 200000,
   checkoutTemplates: [],
+  serviceItems: defaultServiceItems,
   payrollRate: 48,
   payrollBase: "total",
   withholdingTaxRate: 0,
@@ -1285,6 +1312,14 @@ const normalizeStoreSettings = (settings: StoreSettings) => ({
         total: Math.max(0, Number(item.total) || 0)
       })).filter((item) => item.name.trim())
     : [],
+  serviceItems: Array.isArray(settings?.serviceItems)
+    ? settings.serviceItems.map((item, index) => ({
+        id: Number(item.id) || Date.now() + index,
+        name: String(item.name || `商品${index + 1}`),
+        price: Math.max(0, Number(item.price) || 0),
+        category: ["ドリンク", "ボトル", "フード", "その他"].includes(String(item.category)) ? item.category : "ドリンク"
+      } as ServiceItem)).filter((item) => item.name.trim())
+    : defaultServiceItems,
   withholdingTaxRate: settings?.withholdingTaxRate === 10.21 ? 10.21 : 0,
   receivablesEnabled: settings?.receivablesEnabled ?? true,
   themeMode: settings?.themeMode === "dark" || settings?.themeMode === "light" ? settings.themeMode : "system"
@@ -1317,6 +1352,7 @@ function App() {
     initialCustomerActions
   );
   const [openTables, setOpenTables] = usePersistentState<OpenTable[]>(appDataStorageKey("open-tables"), initialOpenTables);
+  const [serviceEntries, setServiceEntries] = usePersistentState<ServiceEntry[]>(appDataStorageKey("service-entries"), []);
   const [expenses, setExpenses] = usePersistentState<Expense[]>(appDataStorageKey("expenses"), initialExpenses, normalizeExpenses);
   const [registerCloses, setRegisterCloses] = usePersistentState<RegisterClose[]>(appDataStorageKey("register-closes"), []);
   const [payrollAdjustments, setPayrollAdjustments] = usePersistentState<Record<number, PayrollAdjustment>>(
@@ -1418,6 +1454,7 @@ function App() {
       const tabs = [
         ["dashboard", "HOME", Home],
         ["checkout", "会計", ReceiptText],
+        ["service", "提供", ClipboardList],
         ["receivables", "売掛", ClipboardList],
         ["closing", "締め", Banknote],
         ["rankings", "ランキング", Trophy],
@@ -1431,6 +1468,7 @@ function App() {
       const tabs = [
         ["dashboard", "HOME", Home],
         ["checkout", "会計", ReceiptText],
+        ["service", "提供", ClipboardList],
         ["receivables", "売掛", ClipboardList],
         ["closing", "締め", Banknote],
         ["rankings", "ランキング", Trophy],
@@ -1511,6 +1549,7 @@ function App() {
       bottles,
       customerActions,
       openTables,
+      serviceEntries,
       expenses,
       registerCloses,
       payrollAdjustments,
@@ -1552,6 +1591,7 @@ function App() {
         setBottles(asArray<BottleKeep>(data.bottles, initialBottles));
         setCustomerActions(asArray<CustomerAction>(data.customerActions, initialCustomerActions));
         setOpenTables(asArray<OpenTable>(data.openTables, initialOpenTables));
+        setServiceEntries(asArray<ServiceEntry>(data.serviceEntries, []));
         setExpenses(normalizeExpenses(asArray<Expense>(data.expenses, initialExpenses)));
         setRegisterCloses(asArray<RegisterClose>(data.registerCloses, []));
         setPayrollAdjustments(normalizePayrollAdjustments(data.payrollAdjustments ?? {}));
@@ -1704,8 +1744,8 @@ function App() {
     setOpenTables((current) => [nextTable, ...current]);
     setCustomerActions((current) => current.filter((item) => item.id !== action.id));
     addOperationLog({
-      scope: "来店予定",
-      action: "移動",
+      scope: "未会計",
+      action: "予定追加",
       target: `${action.customer} / 未会計の卓`,
       amount: action.targetAmount,
       detail: `${hostName(action.hostId)} / ${action.date} ${action.time}`
@@ -1715,6 +1755,52 @@ function App() {
 
   const updateOpenTable = (id: number, patch: Partial<OpenTable>) => {
     setOpenTables((current) => current.map((table) => (table.id === id ? { ...table, ...patch } : table)));
+  };
+
+  const registerServiceItem = (openTableId: number, item: ServiceItem, quantity: number) => {
+    const targetTable = openTables.find((table) => table.id === openTableId);
+    if (!targetTable || quantity <= 0) return;
+    const amount = item.price * quantity;
+    const entry: ServiceEntry = {
+      id: Date.now(),
+      openTableId,
+      table: targetTable.table,
+      itemName: item.name,
+      quantity,
+      amount,
+      time: currentTime()
+    };
+    setOpenTables((current) => current.map((table) => (
+      table.id === openTableId
+        ? { ...table, currentAmount: clampTableAmount(table.currentAmount + amount) }
+        : table
+    )));
+    setServiceEntries((current) => [entry, ...current].slice(0, 80));
+    addOperationLog({
+      scope: "提供",
+      action: "追加",
+      target: `${targetTable.table} / ${item.name}`,
+      amount,
+      detail: `${quantity}点 / ${targetTable.customerName}`
+    });
+    setNotice(`${targetTable.table} に ${item.name} ${quantity}点を追加`);
+  };
+
+  const cancelServiceEntry = (entry: ServiceEntry) => {
+    setOpenTables((current) => current.map((table) => (
+      table.id === entry.openTableId
+        ? { ...table, currentAmount: clampTableAmount(table.currentAmount - entry.amount) }
+        : table
+    )));
+    setServiceEntries((current) => current.filter((item) => item.id !== entry.id));
+    addOperationLog({
+      scope: "提供",
+      action: "取消",
+      target: `${entry.table} / ${entry.itemName}`,
+      amount: entry.amount,
+      detail: `${entry.quantity}点`
+    });
+    setNotice(`${entry.table} の ${entry.itemName} を取り消し`);
   };
 
   const startCheckoutFromOpenTable = (table: OpenTable) => {
@@ -1818,8 +1904,8 @@ function App() {
     setReceivables((current) => current.filter((item) => item.sourceCheckId !== id));
     if (targetCheck) {
       addOperationLog({
-        scope: "会計",
-        action: "削除",
+        scope: "莨夊ｨ・",
+      action: "蜑企勁",
         target: `${targetCheck.table} / ${targetCheck.customerName}`,
         amount: tableTotal(targetCheck),
         detail: `${hostName(targetCheck.hostId)} / ${paymentLabelForDisplay(targetCheck, receivablesEnabled)}`
@@ -1880,8 +1966,8 @@ function App() {
     setExpenses((current) => current.filter((item) => item.id !== id));
     if (targetExpense) {
       addOperationLog({
-        scope: "経費",
-        action: "削除",
+        scope: "莨夊ｨ・",
+      action: "蜑企勁",
         target: `${targetExpense.category} / ${targetExpense.vendor || "支払先未入力"}`,
         amount: targetExpense.amount,
         detail: `${targetExpense.ownerType === "store" ? "店舗" : hostName(targetExpense.hostId)} / ${targetExpense.paymentMethod}`
@@ -1950,8 +2036,8 @@ function App() {
     };
     setBottles((current) => [nextBottle, ...current]);
     addOperationLog({
-      scope: "ボトル",
-      action: "登録",
+      scope: "莨夊ｨ・",
+      action: "蜑企勁",
       target: `${nextBottle.customer} / ${nextBottle.bottleName}`,
       detail: hostName(nextBottle.hostId)
     });
@@ -1971,8 +2057,8 @@ function App() {
     setBottles((current) => current.filter((bottle) => bottle.id !== id));
     if (targetBottle) {
       addOperationLog({
-        scope: "ボトル",
-        action: "削除",
+        scope: "莨夊ｨ・",
+      action: "蜑企勁",
         target: `${targetBottle.customer} / ${targetBottle.bottleName}`,
         detail: hostName(targetBottle.hostId)
       });
@@ -1993,8 +2079,8 @@ function App() {
     };
     setCustomerActions((current) => [nextAction, ...current]);
     addOperationLog({
-      scope: "来店予定",
-      action: "登録",
+      scope: "莨夊ｨ・",
+      action: "蜑企勁",
       target: `${nextAction.customer} / ${customerActionKindLabel[nextAction.kind]}`,
       detail: `${hostName(nextAction.hostId)} / ${nextAction.date} ${nextAction.time}`
     });
@@ -2009,8 +2095,8 @@ function App() {
     setCustomerActions((current) => current.filter((item) => item.id !== id));
     if (targetAction) {
       addOperationLog({
-        scope: "来店予定",
-        action: "削除",
+        scope: "莨夊ｨ・",
+      action: "蜑企勁",
         target: `${targetAction.customer} / ${customerActionKindLabel[targetAction.kind]}`,
         detail: `${hostName(targetAction.hostId)} / ${targetAction.date} ${targetAction.time}`
       });
@@ -2040,8 +2126,8 @@ function App() {
       ...current
     ]);
     addOperationLog({
-      scope: "締め",
-      action: "保存",
+      scope: "莨夊ｨ・",
+      action: "蜑企勁",
       target: currentBusinessDate,
       amount: actualCash,
       detail: `予想 ${money(expectedCash)} / 差額 ${money(difference)}`
@@ -2322,6 +2408,16 @@ function App() {
           onClose={closeExpenseEdit}
           onSave={saveExpense}
           onDelete={() => deleteExpense(editingExpenseId)}
+        />
+      )}
+
+      {activeTab === "service" && canOperate && (
+        <ServiceStationView
+          openTables={openTables}
+          items={storeSettings.serviceItems}
+          entries={serviceEntries}
+          onRegister={registerServiceItem}
+          onCancelEntry={cancelServiceEntry}
         />
       )}
 
@@ -4342,6 +4438,117 @@ function CheckoutEditorModal({
   );
 }
 
+function ServiceStationView({
+  openTables,
+  items,
+  entries,
+  onRegister,
+  onCancelEntry
+}: {
+  openTables: OpenTable[];
+  items: ServiceItem[];
+  entries: ServiceEntry[];
+  onRegister: (openTableId: number, item: ServiceItem, quantity: number) => void;
+  onCancelEntry: (entry: ServiceEntry) => void;
+}) {
+  const [selectedTableId, setSelectedTableId] = React.useState(openTables[0]?.id ?? 0);
+  const [quantity, setQuantity] = React.useState(1);
+  const [category, setCategory] = React.useState<ServiceItem["category"] | "全て">("全て");
+  const selectedTable = openTables.find((table) => table.id === selectedTableId) ?? openTables[0];
+  const categories: Array<ServiceItem["category"] | "全て"> = ["全て", "ドリンク", "ボトル", "フード", "その他"];
+  const visibleItems = items.filter((item) => category === "全て" || item.category === category);
+
+  React.useEffect(() => {
+    if (!selectedTable && openTables[0]) {
+      setSelectedTableId(openTables[0].id);
+    }
+  }, [openTables, selectedTable]);
+
+  const submitItem = (item: ServiceItem) => {
+    if (!selectedTable) return;
+    onRegister(selectedTable.id, item, quantity);
+  };
+
+  return (
+    <section className="service-station-grid">
+      <article className="panel service-station-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">ドリンク場</p>
+            <h3>提供登録</h3>
+          </div>
+          {selectedTable && <span className="status-pill status-warn">{selectedTable.table} {money(selectedTable.currentAmount)}</span>}
+        </div>
+
+        <div className="service-table-grid">
+          {openTables.length === 0 ? (
+            <div className="plain-note compact-note">
+              <ClipboardList size={18} />
+              <p>未会計の卓がありません。</p>
+            </div>
+          ) : openTables.map((table) => (
+            <button className={selectedTable?.id === table.id ? "service-table-button is-active" : "service-table-button"} type="button" key={table.id} onClick={() => setSelectedTableId(table.id)}>
+              <strong>{table.table}</strong>
+              <span>{table.customerName}</span>
+              <b>{money(table.currentAmount)}</b>
+            </button>
+          ))}
+        </div>
+
+        <div className="service-quantity-row">
+          <span>数量</span>
+          <button className="icon-button" type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))}>-</button>
+          <b>{quantity}</b>
+          <button className="icon-button" type="button" onClick={() => setQuantity((current) => Math.min(20, current + 1))}>+</button>
+        </div>
+
+        <div className="service-category-tabs">
+          {categories.map((item) => (
+            <button className={category === item ? "ranking-tab is-active" : "ranking-tab"} type="button" key={item} onClick={() => setCategory(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
+
+        <div className="service-item-grid">
+          {visibleItems.map((item) => (
+            <button className="service-item-button" type="button" key={item.id} disabled={!selectedTable} onClick={() => submitItem(item)}>
+              <span>{item.category}</span>
+              <strong>{item.name}</strong>
+              <b>{money(item.price * quantity)}</b>
+            </button>
+          ))}
+        </div>
+      </article>
+
+      <article className="panel service-history-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">直近</p>
+            <h3>提供履歴</h3>
+          </div>
+        </div>
+        <div className="service-history-list">
+          {entries.length === 0 ? (
+            <div className="plain-note compact-note">
+              <ReceiptText size={18} />
+              <p>まだ提供登録はありません。</p>
+            </div>
+          ) : entries.slice(0, 20).map((entry) => (
+            <div className="service-history-row" key={entry.id}>
+              <span>{entry.time}</span>
+              <strong>{entry.table}</strong>
+              <span>{entry.itemName} x{entry.quantity}</span>
+              <b>{money(entry.amount)}</b>
+              <button className="icon-text-button ghost-button" type="button" onClick={() => onCancelEntry(entry)}>取消</button>
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function OpenTablesPanel({
   title,
   openTables,
@@ -6260,6 +6467,37 @@ function ManagementView({
       checkoutTemplates: settings.checkoutTemplates.filter((template) => template.id !== id)
     });
   };
+  const updateServiceItem = (id: number, patch: Partial<ServiceItem>) => {
+    onUpdateSettings({
+      ...settings,
+      serviceItems: settings.serviceItems.map((item) => (
+        item.id === id
+          ? {
+              ...item,
+              ...patch,
+              name: patch.name ?? item.name,
+              price: patch.price === undefined ? item.price : Math.max(0, patch.price),
+              category: patch.category ?? item.category
+            }
+          : item
+      ))
+    });
+  };
+  const addServiceItem = () => {
+    onUpdateSettings({
+      ...settings,
+      serviceItems: [
+        ...settings.serviceItems,
+        { id: Date.now(), name: "新規商品", price: 0, category: "ドリンク" }
+      ]
+    });
+  };
+  const deleteServiceItem = (id: number) => {
+    onUpdateSettings({
+      ...settings,
+      serviceItems: settings.serviceItems.filter((item) => item.id !== id)
+    });
+  };
   const storeSettingsContent = (
     <>
       <div className="form-grid">
@@ -6335,6 +6573,35 @@ function ManagementView({
             ))}
           </div>
         )}
+      </div>
+      <div className="service-item-settings">
+        <div className="section-title-row">
+          <div>
+            <p className="eyebrow">ドリンク場</p>
+            <h3>提供商品</h3>
+          </div>
+          <button className="icon-text-button" type="button" onClick={addServiceItem}>
+            <Plus size={14} />
+            追加
+          </button>
+        </div>
+        <div className="service-item-settings-list">
+          {settings.serviceItems.map((item) => (
+            <div className="service-item-settings-row" key={item.id}>
+              <TextField label="名前" value={item.name} onChange={(name) => updateServiceItem(item.id, { name })} />
+              <NumberField label="金額" value={item.price} min={0} step={100} onChange={(price) => updateServiceItem(item.id, { price })} />
+              <SelectField
+                label="種別"
+                value={item.category}
+                options={["ドリンク", "ボトル", "フード", "その他"].map((value) => ({ label: value, value }))}
+                onChange={(category) => updateServiceItem(item.id, { category: category as ServiceItem["category"] })}
+              />
+              <button className="icon-button danger-button" type="button" aria-label="提供商品削除" onClick={() => deleteServiceItem(item.id)}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="plain-note">
         <ReceiptText size={16} />

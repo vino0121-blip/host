@@ -2076,6 +2076,110 @@ button.expense-category-row:hover {
   gap: 6px;
 }
 
+.service-station-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.service-table-grid,
+.service-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 8px;
+}
+
+.service-table-button,
+.service-item-button {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+  color: #151515;
+  text-align: left;
+}
+
+.service-table-button.is-active {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.service-table-button span,
+.service-item-button span {
+  color: inherit;
+  font-size: 10px;
+}
+
+.service-table-button b,
+.service-item-button b {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-quantity-row {
+  display: grid;
+  grid-template-columns: auto 38px 42px 38px;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.service-quantity-row b {
+  text-align: center;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-category-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.service-history-list,
+.service-item-settings-list {
+  display: grid;
+  gap: 6px;
+}
+
+.service-history-row {
+  display: grid;
+  grid-template-columns: 44px 64px minmax(0, 1fr) minmax(80px, auto) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid #e4ded3;
+  border-radius: 8px;
+  background: #fbfaf7;
+  font-size: 12px;
+}
+
+.service-history-row b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-item-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e4ded3;
+}
+
+.service-item-settings-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) 32px;
+  align-items: end;
+  gap: 6px;
+}
+
 .payment-balance {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
@@ -3426,6 +3530,19 @@ button:disabled {
   }
 
   .checkout-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .service-station-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .service-category-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .service-history-row,
+  .service-item-settings-row {
     grid-template-columns: 1fr;
   }
 
